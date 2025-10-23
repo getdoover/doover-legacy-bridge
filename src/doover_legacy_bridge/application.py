@@ -22,7 +22,7 @@ class DooverLegacyBridgeApplication(Application):
 
     async def setup(self):
         self.legacy_client = Client(
-            token=self.config.legacy_agent_key.value,
+            token=self.config.legacy_api_key.value,
             base_url=self.config.legacy_api_url.value,
         )
 
@@ -39,7 +39,7 @@ class DooverLegacyBridgeApplication(Application):
 
         if message.channel_name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
-            if any(datetime.fromtimestamp(v / 1000) - now > timedelta(minutes=2) for v in payload.values()):
+            if any(datetime.fromtimestamp(v / 1000, timezone.utc) - now > timedelta(minutes=2) for v in payload.values()):
                 # set user as connected to ui_state@wss_connections and ui_cmds@wss_connections
                 data = {UI_FASTMODE_AGENT_KEY: True}
                 run_fastmode = True
@@ -72,7 +72,7 @@ class DooverLegacyBridgeApplication(Application):
             # don't sync anything more than a year ago
             last_fetched = datetime.now(timezone.utc) - timedelta(days=365)
         else:
-            last_fetched = datetime.fromtimestamp(last_fetched)
+            last_fetched = datetime.fromtimestamp(last_fetched, timezone.utc)
 
         # don't run on a schedule any quicker than 5min
         if last_fetched - datetime.now(timezone.utc) > timedelta(minutes=5):
@@ -95,6 +95,8 @@ class DooverLegacyBridgeApplication(Application):
 
             start = end
             end = min(datetime.now(timezone.utc), end + timedelta(days=1))
+            await self.set_tag("last_ui_sync", datetime.now(timezone.utc).timestamp())
+            await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
 
     async def get_or_fetch_channel_id(self, channel_name):
         # these will never change so we should be good to cache them, it'll save an api request in future.

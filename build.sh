@@ -9,6 +9,7 @@ uv pip install \
    --python 3.13 \
    --quiet \
    --target packages \
+   --refresh \
    -r requirements.txt
 
 rm -f package.zip
