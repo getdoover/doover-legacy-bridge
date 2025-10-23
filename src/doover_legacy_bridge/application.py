@@ -20,25 +20,30 @@ UI_FASTMODE_AGENT_KEY = "df4108e0-7bef-459c-8b58-5c26360517e7"
 class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
 
+    @property
+    def legacy_client(self):
+        if self._legacy_client is None:
+            self._legacy_client = Client(
+                token=self.config.legacy_api_key.value,
+                base_url=self.config.legacy_api_url.value,
+            )
+        return self._legacy_client
+
     async def setup(self):
         if self.config.legacy_agent_key.value == "placeholder":
             log.info("Legacy agent key not set, not connecting to Doover 1.0.")
             return
 
-        self.legacy_client = Client(
-            token=self.config.legacy_api_key.value,
-            base_url=self.config.legacy_api_url.value,
-        )
+        # only make this when we actually need it because it takes forever (~2s)...
+        self._legacy_client = None
 
         num_imported_messages = await self.get_tag("imported_messages")
         if num_imported_messages is None:
             await self.set_tag("imported_messages", 0)
 
     async def close(self):
-        # update device as being online
-        # await self.ping_connection(max(t.timestamp for t in self.device.tag_frames))
-
-        self.legacy_client.session.close()
+        if self._legacy_client:
+            self._legacy_client.session.close()
 
     async def on_message_create(self, message: MessageCreateEvent):
         if self.config.import_mode.value is True:
@@ -54,7 +59,7 @@ class DooverLegacyBridgeApplication(Application):
         log.info(f"Received new message on channel: {message.channel_name}")
 
         if message.channel_name in ("ui_state", "ui_cmds"):
-            if "doover_legacy_bridge_id" in message.message.data:
+            if "doover_legacy_bridge_at" in message.message.data:
                 log.info("Ignoring message originally synced from Doover 1.0")
             else:
                 log.info("Forwarding message to Doover 1.0")
@@ -65,6 +70,7 @@ class DooverLegacyBridgeApplication(Application):
             last_message = await self.get_last_message_timestamp()
             await self.sync_channel("ui_state", last_message)
             await self.sync_channel("ui_cmds", last_message)
+            await self.determine_online_status()
 
         if message.channel_name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
@@ -77,25 +83,33 @@ class DooverLegacyBridgeApplication(Application):
                 data = {UI_FASTMODE_AGENT_KEY: False}
                 run_fastmode = False
 
-            log.info(f"Publishing run_fastmode: {run_fastmode} to wss_connections.")
-            self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_state@wss_connections", data)
-            self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data)
+            current_value = await self.get_tag("legacy_fastmode_sync_enabled")
 
-            if run_fastmode:
-                for _ in range(28):
-                    # this is so hacky, potentially expensive and definitely bad practice (sleeping in lambda)
-                    # but it'll hopefully do...
-                    # update ui every 10 seconds for 4min 50sec (to allow cleanup before 5min limit)
-                    # if the user wants to keep watching after the 3min they need to
-                    # click out and click back into the device.
-                    log.info("Sleeping for 10 seconds.")
-                    await asyncio.sleep(10)
-                    last_message = await self.get_last_message_timestamp()
-                    await self.sync_channel("ui_state", last_message)
-                    await self.sync_channel("ui_cmds", last_message)
-                    await self.set_tag(
-                        "last_ui_sync", datetime.now(timezone.utc).timestamp()
-                    )
+            if current_value is None or current_value != run_fastmode:
+                log.info(f"Publishing run_fastmode: {run_fastmode} to wss_connections.")
+                self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_state@wss_connections", data)
+                self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data)
+
+                # important to set and publish this before we go running the sync loop to make sure
+                # it doesn't get run more than once
+                await self.set_tag("legacy_fastmode_sync_enabled", run_fastmode)
+                await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
+
+                if run_fastmode:
+                    for _ in range(28):
+                        # this is so hacky, potentially expensive and definitely bad practice (sleeping in lambda)
+                        # but it'll hopefully do...
+                        # update ui every 10 seconds for 4min 50sec (to allow cleanup before 5min limit)
+                        # if the user wants to keep watching after the 3min they need to
+                        # click out and click back into the device.
+                        log.info("Sleeping for 10 seconds.")
+                        await asyncio.sleep(10)
+                        last_message = await self.get_last_message_timestamp()
+                        await self.sync_channel("ui_state", last_message)
+                        await self.sync_channel("ui_cmds", last_message)
+                        await self.set_tag(
+                            "last_ui_sync", datetime.now(timezone.utc).timestamp()
+                        )
 
     async def on_schedule(self, event: ScheduleEvent):
         if self.config.legacy_agent_key.value == "placeholder":
@@ -111,6 +125,7 @@ class DooverLegacyBridgeApplication(Application):
         await self.sync_channel("ui_state", last_message)
         await self.sync_channel("ui_cmds", last_message)
         await self.set_tag("last_ui_sync", datetime.now(timezone.utc).timestamp())
+        await self.determine_online_status()
 
     async def sync_channel(self, channel_name, start_time: datetime):
         log.info(f"Syncing channel: {channel_name} since {start_time}")
@@ -142,7 +157,8 @@ class DooverLegacyBridgeApplication(Application):
                     "imported_messages",
                     await self.get_tag("imported_messages") + len(messages),
                 )
-                await self.set_tag("last_ui_sync", messages[-1].timestamp)
+                await self.set_tag("last_ui_message", max(m.timestamp for m in messages).timestamp())
+                await self.set_tag("last_ui_sync", datetime.now(timezone.utc).timestamp())
                 await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
 
     async def determine_online_status(self):
