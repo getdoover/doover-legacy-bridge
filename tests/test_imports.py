@@ -13,11 +13,3 @@ def test_config():
 
     config = DooverLegacyBridgeConfig()
     assert isinstance(config.to_dict(), dict)
-
-def test_ui():
-    from doover_legacy_bridge.app_ui import DooverLegacyBridgeUI
-    assert DooverLegacyBridgeUI
-
-def test_state():
-    from doover_legacy_bridge.app_state import DooverLegacyBridgeState
-    assert DooverLegacyBridgeState

@@ -2,49 +2,70 @@
     "doover_legacy_bridge": {
         "name": "doover_legacy_bridge",
         "display_name": "doover-legacy-bridge",
-        "type": "DEV",
+        "type": "PRO",
         "visibility": "PUB",
-        "allow_many": true,
+        "allow_many": false,
         "description": "Bridge a legacy Doover device to Doover 2.0",
         "long_description": "README.md",
         "depends_on": [],
-        "owner_org_key": "FIX-ME",
+        "owner_org_id": null,
         "image_name": "ghcr.io/getdoover/doover-legacy-bridge:main",
-        "container_registry_profile_key": "93955828574386692",
+        "container_registry_profile_id": 93955828574386692,
         "build_args": "--platform linux/amd64,linux/arm64",
+        "staging_config": {
+            "owner_org_id": null,
+            "container_registry_profile_id": 7369503425484439552,
+            "lambda_config": {
+                "Environment": {
+                    "Variables": {
+                        "DOOVER_DATA_ENDPOINT": "https://data.staging.udoover.com/api"
+                    }
+                },
+                "Runtime": "python3.13",
+                "Timeout": 300,
+                "Handler": "src.doover_legacy_bridge.handler",
+                "MemorySize": 128,
+                "Architectures": [
+                    "arm64"
+                ]
+            },
+            "id": "106912168380781834"
+        },
+        "lambda_config": {
+            "Environment": {
+                "Variables": {
+                    "DOOVER_DATA_ENDPOINT": "https://data.udoover.com/api"
+                }
+            },
+            "Runtime": "python3.13",
+            "Timeout": 300,
+            "Handler": "src.doover_legacy_bridge.handler",
+            "MemorySize": 128,
+            "Architectures": [
+                "arm64"
+            ]
+        },
         "config_schema": {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "",
             "title": "Application Config",
             "type": "object",
             "properties": {
-                "digital_outputs_enabled": {
-                    "title": "Digital Outputs Enabled",
-                    "x-name": "digital_outputs_enabled",
-                    "x-hidden": false,
-                    "type": "boolean",
-                    "default": true
-                },
-                "a_funny_message": {
-                    "title": "A Funny Message",
-                    "x-name": "a_funny_message",
+                "agent_key": {
+                    "title": "Agent Key",
+                    "x-name": "agent_key",
                     "x-hidden": false,
                     "type": "string"
-                },
-                "simulator_app_key": {
-                    "format": "doover-application",
-                    "title": "Simulator App Key",
-                    "x-name": "simulator_app_key",
-                    "x-hidden": false,
-                    "type": "string",
-                    "description": "The app key for the simulator"
                 }
             },
             "additionalElements": true,
             "required": [
-                "a_funny_message",
-                "simulator_app_key"
+                "agent_key"
             ]
-        }
+        },
+        "id": null,
+        "code_repo_id": null,
+        "repo_branch": "main",
+        "lambda_arn": null
     }
 }
