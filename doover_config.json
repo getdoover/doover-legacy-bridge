@@ -56,11 +56,35 @@
                     "x-name": "agent_key",
                     "x-hidden": false,
                     "type": "string"
+                },
+                "dv_proc_subscriptions": {
+                    "title": "Subscription",
+                    "x-name": "dv_proc_subscriptions",
+                    "x-hidden": false,
+                    "type": "array",
+                    "description": "A list of channels to subscribe to.",
+                    "items": {
+                        "title": "Channel Subscription",
+                        "x-name": "dv_proc_subscription",
+                        "x-hidden": false,
+                        "type": "string",
+                        "description": "The name of the channel to subscribe to"
+                    }
+                },
+                "dv_proc_schedules": {
+                    "title": "Schedule",
+                    "x-name": "dv_proc_schedules",
+                    "x-hidden": false,
+                    "type": "integer",
+                    "description": "The interval in minutes to run the task. 0 to disable.",
+                    "minimum": 0
                 }
             },
             "additionalElements": true,
             "required": [
-                "agent_key"
+                "agent_key",
+                "dv_proc_subscriptions",
+                "dv_proc_schedules"
             ]
         },
         "id": null,

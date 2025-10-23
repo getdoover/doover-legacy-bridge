@@ -1,11 +1,14 @@
 from pathlib import Path
 
 from pydoover import config
+from pydoover.cloud.processor import ScheduleConfig, ManySubscriptionConfig
 
 
 class DooverLegacyBridgeConfig(config.Schema):
     def __init__(self):
         self.legacy_agent_key = config.String("Agent Key")
+        self.subscription = ManySubscriptionConfig()
+        self.schedule = ScheduleConfig()
 
 
 def export():
