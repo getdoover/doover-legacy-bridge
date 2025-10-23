@@ -21,7 +21,10 @@ class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
 
     async def setup(self):
-        self.legacy_client = Client()
+        self.legacy_client = Client(
+            token=self.config.legacy_agent_key.value,
+            base_url=self.config.legacy_api_url.value,
+        )
 
     async def close(self):
         # update device as being online

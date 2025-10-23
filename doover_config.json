@@ -57,6 +57,18 @@
                     "x-hidden": false,
                     "type": "string"
                 },
+                "legacy_api_key": {
+                    "title": "Legacy API Key",
+                    "x-name": "legacy_api_key",
+                    "x-hidden": false,
+                    "type": "string"
+                },
+                "legacy_api_url": {
+                    "title": "Legacy API URL",
+                    "x-name": "legacy_api_url",
+                    "x-hidden": false,
+                    "type": "string"
+                },
                 "dv_proc_subscriptions": {
                     "title": "Subscription",
                     "x-name": "dv_proc_subscriptions",
@@ -83,6 +95,8 @@
             "additionalElements": true,
             "required": [
                 "agent_key",
+                "legacy_api_key",
+                "legacy_api_url",
                 "dv_proc_subscriptions",
                 "dv_proc_schedules"
             ]

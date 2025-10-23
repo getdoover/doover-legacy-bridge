@@ -687,7 +687,7 @@ wheels = [
 [[package]]
 name = "pydoover"
 version = "0.4.15"
-source = { git = "https://github.com/getdoover/pydoover?branch=doover-2#b6a76d2a08881f5453c6d8de8784f7534b77fa6e" }
+source = { git = "https://github.com/getdoover/pydoover?branch=doover-2#a4c942c3fab24ebcabfc7f35d1179bd14711afb9" }
 dependencies = [
     { name = "aiohttp" },
     { name = "requests" },

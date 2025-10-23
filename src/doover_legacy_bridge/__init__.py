@@ -9,5 +9,5 @@ def handler(event: dict[str, Any], context):
     """
     Run the application.
     """
-    EwonConfig.clear_elements()
-    run_app(EwonApplication(config=EwonConfig()), event, context)
+    DooverLegacyBridgeConfig.clear_elements()
+    run_app(DooverLegacyBridgeApplication(config=DooverLegacyBridgeConfig()), event, context)
