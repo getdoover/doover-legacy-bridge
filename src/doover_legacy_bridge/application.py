@@ -26,6 +26,10 @@ class DooverLegacyBridgeApplication(Application):
             base_url=self.config.legacy_api_url.value,
         )
 
+        num_imported_messages = await self.get_tag("imported_messages")
+        if num_imported_messages is None:
+            await self.set_tag("imported_messages", 0)
+
     async def close(self):
         # update device as being online
         # await self.ping_connection(max(t.timestamp for t in self.device.tag_frames))
@@ -33,13 +37,21 @@ class DooverLegacyBridgeApplication(Application):
         self.legacy_client.session.close()
 
     async def on_message_create(self, message: MessageCreateEvent):
+        import_mode = await self.get_tag("import_mode")
+        if import_mode is None or import_mode is True:
+            log.info("Import mode enabled, not processing messages.")
+            await self.set_tag("import_mode", True)
+            return
+
         payload = message.message.data
+        log.info(f"Received new message on channel: {message.channel_name}")
+
         if message.channel_name in ("ui_state", "ui_cmds"):
             self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, message.channel_name, message.message.data)
 
         if message.channel_name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
-            if any(datetime.fromtimestamp(v / 1000, timezone.utc) - now > timedelta(minutes=2) for v in payload.values()):
+            if any(datetime.fromtimestamp(v / 1000, timezone.utc) - now < timedelta(minutes=2) for v in payload.values()):
                 # set user as connected to ui_state@wss_connections and ui_cmds@wss_connections
                 data = {UI_FASTMODE_AGENT_KEY: True}
                 run_fastmode = True
@@ -48,6 +60,7 @@ class DooverLegacyBridgeApplication(Application):
                 data = {UI_FASTMODE_AGENT_KEY: False}
                 run_fastmode = False
 
+            log.info(f"Publishing run_fastmode: {run_fastmode} to wss_connections.")
             self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_state@wss_connections", data)
             self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data)
 
@@ -58,8 +71,9 @@ class DooverLegacyBridgeApplication(Application):
                     # update ui every 10 seconds for 4min 50sec (to allow cleanup before 5min limit)
                     # if the user wants to keep watching after the 3min they need to
                     # click out and click back into the device.
+                    log.info("Sleeping for 10 seconds.")
                     await asyncio.sleep(10)
-                    last_fetched = await self.get_tag("last_ui_sync")
+                    last_fetched = await self.get_last_fetched()
                     await self.sync_channel("ui_state", last_fetched)
                     await self.sync_channel("ui_cmds", last_fetched)
                     await self.set_tag(
@@ -67,13 +81,7 @@ class DooverLegacyBridgeApplication(Application):
                     )
 
     async def on_schedule(self, event: ScheduleEvent):
-        last_fetched = await self.get_tag("last_ui_sync")
-        if not last_fetched:
-            # don't sync anything more than a year ago
-            last_fetched = datetime.now(timezone.utc) - timedelta(days=365)
-        else:
-            last_fetched = datetime.fromtimestamp(last_fetched, timezone.utc)
-
+        last_fetched = await self.get_last_fetched()
         # don't run on a schedule any quicker than 5min
         if last_fetched - datetime.now(timezone.utc) > timedelta(minutes=5):
             return
@@ -81,20 +89,30 @@ class DooverLegacyBridgeApplication(Application):
         await self.sync_channel("ui_state", last_fetched)
         await self.sync_channel("ui_cmds", last_fetched)
         await self.set_tag("last_ui_sync", datetime.now(timezone.utc).timestamp())
+        await self.set_tag("import_mode", False)
 
     async def sync_channel(self, channel_name, start_time: datetime):
+        log.info(f"Syncing channel: {channel_name} since {start_time}")
         channel_id = await self.get_or_fetch_channel_id(channel_name)
 
         start = start_time
         end = min(datetime.now(timezone.utc), start_time + timedelta(days=1))
         for day in range((datetime.now(timezone.utc) - start_time).days):
+            log.info(f"Getting messages for channel {channel_name} from start: {start} to end: {end}")
             messages = self.legacy_client.get_channel_messages_in_window(channel_id, start, end)
+            log.info(f"Processing {len(messages)} messages...")
             for message in messages:
                 # .fetch_payload() won't do an api call because the endpoint above returns the message content
-                await self.api.publish_message(self.agent_id, channel_name, message.fetch_payload())
+                await self.api.publish_message(
+                    self.agent_id,
+                    channel_name,
+                    message.fetch_payload(),
+                    message.timestamp,
+                )
 
             start = end
             end = min(datetime.now(timezone.utc), end + timedelta(days=1))
+            await self.set_tag("imported_messages", await self.get_tag("imported_messages") + len(messages))
             await self.set_tag("last_ui_sync", datetime.now(timezone.utc).timestamp())
             await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
 
@@ -102,7 +120,16 @@ class DooverLegacyBridgeApplication(Application):
         # these will never change so we should be good to cache them, it'll save an api request in future.
         channel_id = await self.get_tag(f"{channel_name}_channel_id")
         if not channel_id:
-            channel = self.legacy_client.get_channel_named(self.config.legacy_agent_key.value, channel_name)
+            channel = self.legacy_client.get_channel_named(channel_name, self.config.legacy_agent_key.value)
             channel_id = channel.id
             await self.set_tag(f"{channel_name}_channel_id", channel_id)
         return channel_id
+
+    async def get_last_fetched(self):
+        last_fetched = await self.get_tag("last_ui_sync")
+        if not last_fetched:
+            # don't sync anything more than a year ago
+            last_fetched = datetime.now(timezone.utc) - timedelta(days=365)
+        else:
+            last_fetched = datetime.fromtimestamp(last_fetched, timezone.utc)
+        return last_fetched
