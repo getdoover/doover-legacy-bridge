@@ -90,6 +90,12 @@
                     "type": "integer",
                     "description": "The interval in minutes to run the task. 0 to disable.",
                     "minimum": 0
+                },
+                "import_mode": {
+                    "title": "Import Mode",
+                    "x-name": "import_mode",
+                    "x-hidden": false,
+                    "type": "boolean"
                 }
             },
             "additionalElements": true,
@@ -98,7 +104,8 @@
                 "legacy_api_key",
                 "legacy_api_url",
                 "dv_proc_subscriptions",
-                "dv_proc_schedules"
+                "dv_proc_schedules",
+                "import_mode"
             ]
         },
         "id": null,

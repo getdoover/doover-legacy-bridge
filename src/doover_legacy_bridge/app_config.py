@@ -11,6 +11,7 @@ class DooverLegacyBridgeConfig(config.Schema):
         self.legacy_api_url = config.String("Legacy API URL")
         self.subscription = ManySubscriptionConfig()
         self.schedule = ScheduleConfig()
+        self.import_mode = config.Boolean("Import Mode")
 
 
 def export():
