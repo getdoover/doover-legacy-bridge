@@ -1,17 +1,19 @@
 {
-    "doover_legacy_bridge": {
-        "name": "doover_legacy_bridge",
-        "display_name": "doover-legacy-bridge",
-        "type": "PRO",
+    "doover_legacy_bridge_integration": {
+        "name": "doover_legacy_bridge_integration",
+        "display_name": "Doover Legacy Bridge (Integration)",
+        "type": "INT",
         "visibility": "PUB",
         "allow_many": false,
-        "description": "Bridge a legacy Doover device to Doover 2.0",
+        "description": "Install on an organisation to enable live syncing from Doover 1.0 -> Doover 2.0.",
         "long_description": "README.md",
         "depends_on": [],
         "owner_org_id": null,
         "image_name": "ghcr.io/getdoover/doover-legacy-bridge:main",
         "container_registry_profile_id": 93955828574386692,
         "build_args": "--platform linux/amd64,linux/arm64",
+        "export_config_command": "export-config_integration",
+        "run_command": null,
         "staging_config": {
             "owner_org_id": null,
             "container_registry_profile_id": 7369503425484439552,
@@ -23,7 +25,156 @@
                 },
                 "Runtime": "python3.13",
                 "Timeout": 300,
-                "Handler": "src.doover_legacy_bridge.handler",
+                "Handler": "src.integration.handler",
+                "MemorySize": 128,
+                "Architectures": [
+                    "arm64"
+                ]
+            },
+            "id": "121006735451253505"
+        },
+        "lambda_config": {
+            "Environment": {
+                "Variables": {
+                    "DOOVER_DATA_ENDPOINT": "https://data.udoover.com/api"
+                }
+            },
+            "Runtime": "python3.13",
+            "Timeout": 300,
+            "Handler": "src.integration.handler",
+            "MemorySize": 128,
+            "Architectures": [
+                "arm64"
+            ]
+        },
+        "config_schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "",
+            "title": "Application Config",
+            "type": "object",
+            "properties": {
+                "dv_proc_ingestion": {
+                    "title": "Ingestion Endpoint",
+                    "x-name": "dv_proc_ingestion",
+                    "x-hidden": false,
+                    "type": "object",
+                    "description": "Ingestion Endpoint configuration",
+                    "properties": {
+                        "cidr_ranges": {
+                            "title": "CIDR Ranges",
+                            "x-name": "cidr_ranges",
+                            "x-hidden": false,
+                            "type": "array",
+                            "description": "Accepted CIDR ranges for incoming requests",
+                            "items": {
+                                "title": "IP Range, e.g. 1.234.56.78/24 or 110.220.120.1/32",
+                                "x-name": "ip_range,_e.g._1.234.56.78/24_or_110.220.120.1/32",
+                                "x-hidden": false,
+                                "type": "string"
+                            }
+                        },
+                        "signing_key": {
+                            "title": "Signing Key",
+                            "x-name": "signing_key",
+                            "x-hidden": false,
+                            "type": "string",
+                            "description": "Private SHA256 signing key for the request. While not recommended, this may be `None` if no signed hash verification is required."
+                        },
+                        "sha256_hash_header": {
+                            "title": "SHA256 Hash Header",
+                            "x-name": "sha256_hash_header",
+                            "x-hidden": false,
+                            "type": "string",
+                            "description": "Header key for the hash of the signed payload (defaults to x-hmac-sha256 if signing_key is present)",
+                            "default": "x-hmac-sha256"
+                        },
+                        "throttle": {
+                            "title": "Throttle",
+                            "x-name": "throttle",
+                            "x-hidden": false,
+                            "type": "integer",
+                            "description": "The number of requests to allow per second. Due to internal limits, this cannot exceed 30.",
+                            "default": 10,
+                            "maximum": 30
+                        },
+                        "never_replace_token": {
+                            "title": "Never Replace Token",
+                            "x-name": "never_replace_token",
+                            "x-hidden": false,
+                            "type": "boolean",
+                            "description": "Enable this if the token is difficult to change and must never change. This is not recommended from a security standpoint, however may be necessary in some situations.If this option is disabled and then enabled, a new token will be generated at that point.",
+                            "default": false
+                        },
+                        "mini_token": {
+                            "title": "Mini Token",
+                            "x-name": "mini_token",
+                            "x-hidden": false,
+                            "type": "boolean",
+                            "description": "Enable this to generate a mini token for use with the ingestion endpoint. Mini tokens are ~70 bytes, compared with the ~900 bytes of a regular token. Generally, this is not advised as it adds complexity and latency to ingestion calls, however may be desirable in especially low-bandwidth and embedded environments. There is no security difference in the two tokens."
+                        }
+                    },
+                    "additionalElements": true,
+                    "required": [
+                        "cidr_ranges",
+                        "signing_key",
+                        "mini_token"
+                    ]
+                },
+                "dv_proc_devices": {
+                    "title": "Devices",
+                    "x-name": "dv_proc_devices",
+                    "x-hidden": false,
+                    "type": "array",
+                    "description": "A list of devices to generate reports for.",
+                    "items": {
+                        "title": "Device",
+                        "x-name": "dv_proc_devices",
+                        "x-hidden": false,
+                        "type": "string",
+                        "pattern": "\\d+",
+                        "format": "doover-device"
+                    }
+                }
+            },
+            "additionalElements": true,
+            "required": [
+                "dv_proc_ingestion",
+                "dv_proc_devices"
+            ]
+        },
+        "id": null,
+        "code_repo_id": null,
+        "repo_branch": "main",
+        "lambda_arn": null,
+        "organisation_id": null
+    },
+    "doover_legacy_bridge_cloud_app": {
+        "name": "doover_legacy_bridge_cloud_app",
+        "display_name": "Doover Legacy Bridge (Cloud App)",
+        "type": "PRO",
+        "visibility": "PUB",
+        "allow_many": false,
+        "description": "Install on a Doover 2.0 device to enable a historical sync and bidirectional syncing of messages.",
+        "long_description": "README.md",
+        "depends_on": [],
+        "owner_org_id": null,
+        "image_name": "ghcr.io/getdoover/doover-legacy-bridge:main",
+        "container_registry_profile_id": 93955828574386692,
+        "build_args": "--platform linux/amd64,linux/arm64",
+        "export_config_command": "export-config_cloud_app",
+        "run_command": null,
+        "staging_config": {
+            "owner_org_id": null,
+            "container_registry_profile_id": 7369503425484439552,
+            "lambda_config": {
+                "Environment": {
+                    "Variables": {
+                        "DOOVER_DATA_ENDPOINT": "https://data.staging.udoover.com/api"
+                    }
+                },
+                "Runtime": "python3.13",
+                "Timeout": 300,
+                "Handler": "src.cloud_app.handler",
                 "MemorySize": 128,
                 "Architectures": [
                     "arm64"
@@ -39,7 +190,7 @@
             },
             "Runtime": "python3.13",
             "Timeout": 300,
-            "Handler": "src.doover_legacy_bridge.handler",
+            "Handler": "src.cloud_app.handler",
             "MemorySize": 128,
             "Architectures": [
                 "arm64"
@@ -51,12 +202,6 @@
             "title": "Application Config",
             "type": "object",
             "properties": {
-                "agent_key": {
-                    "title": "Agent Key",
-                    "x-name": "agent_key",
-                    "x-hidden": false,
-                    "type": "string"
-                },
                 "legacy_api_key": {
                     "title": "Legacy API Key",
                     "x-name": "legacy_api_key",
@@ -91,6 +236,12 @@
                     "description": "The interval in minutes to run the task. 0 to disable.",
                     "minimum": 0
                 },
+                "agent_key": {
+                    "title": "Agent Key",
+                    "x-name": "agent_key",
+                    "x-hidden": false,
+                    "type": "string"
+                },
                 "import_mode": {
                     "title": "Import Mode",
                     "x-name": "import_mode",
@@ -100,11 +251,11 @@
             },
             "additionalElements": true,
             "required": [
-                "agent_key",
                 "legacy_api_key",
                 "legacy_api_url",
                 "dv_proc_subscriptions",
                 "dv_proc_schedules",
+                "agent_key",
                 "import_mode"
             ]
         },

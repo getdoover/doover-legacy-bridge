@@ -1,10 +1,10 @@
-import asyncio
 import logging
 from zoneinfo import ZoneInfo
 
 from pydoover.cloud.processor import (
     Application,
     MessageCreateEvent,
+    IngestionEndpointEvent,
 )
 from pydoover.cloud.processor.types import ScheduleEvent
 from pydoover.cloud.api import Client
@@ -17,6 +17,7 @@ log = logging.getLogger()
 # this uuid is the equivalent of "doover 2.0 is watching the device"
 # when handling legacy ui_state@wss_connection channel
 UI_FASTMODE_AGENT_KEY = "df4108e0-7bef-459c-8b58-5c26360517e7"
+
 
 class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
@@ -46,6 +47,48 @@ class DooverLegacyBridgeApplication(Application):
         if self._legacy_client:
             self._legacy_client.session.close()
 
+    async def on_ingestion_endpoint(self, event: IngestionEndpointEvent):
+        if event.payload["event_name"] != "relay_channel_message":
+            log.info(f"Unknown event: {event.payload}.")
+            return
+
+        legacy_agent_id = event.payload["agent_key"]
+        if legacy_agent_id == self.config.legacy_agent_key.value:
+            agent_id = self.agent_id
+        else:
+            log.error(f"Unknown legacy agent key: {legacy_agent_id}")
+            return
+
+        channel_name = event.payload["channel_name"]
+        payload = event.payload["data"]
+        if not isinstance(payload, dict):
+            log.error(
+                f"Message '{payload}' not of correct type (object): '{type(payload)}'"
+            )
+            return
+        payload["imported_via_integration"] = True
+
+        await self.api.publish_message(
+            agent_id,
+            channel_name,
+            data=payload,
+            timestamp=event.payload["timestamp"],
+            record_log=event.payload["record_log"],
+            is_diff=event.payload["is_diff"],
+        )
+        await self.set_tag(
+            "imported_messages", await self.get_tag("imported_messages") + 1
+        )
+
+        ts = event.payload["timestamp"] or datetime.now(tz=timezone.utc).timestamp()
+        if ts > await self.get_tag(f"last_message_{channel_name}", 0):
+            await self.set_tag(f"last_message_{channel_name}", ts)
+        await self.set_tag(
+            f"last_sync_{channel_name}", datetime.now(timezone.utc).timestamp()
+        )
+
+        log.info("Successfully forwarded message from Doover 1.0.")
+
     async def on_message_create(self, event: MessageCreateEvent):
         # if self.config.import_mode.value is True:
         #     # this should never get here because we shouldn't be subscribed to messages
@@ -59,12 +102,16 @@ class DooverLegacyBridgeApplication(Application):
         payload = event.message.data
         log.info(f"Received new message on channel: {event.channel_name}")
 
-        if event.channel_name in ("ui_state", "ui_cmds"):
+        if event.channel_name == "ui_cmds":
             if "doover_legacy_bridge_at" in event.message.diff:
                 log.info("Ignoring message originally synced from Doover 1.0")
             else:
                 log.info("Forwarding message to Doover 1.0")
-                self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, event.channel_name, event.message.diff)
+                self.legacy_client.publish_to_channel_name(
+                    self.config.legacy_agent_key.value,
+                    event.channel_name,
+                    event.message.diff,
+                )
 
         if event.channel_name == "trigger_manual_sync":
             log.info("Manual sync requested")
@@ -74,7 +121,11 @@ class DooverLegacyBridgeApplication(Application):
 
         if event.channel_name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
-            if any(datetime.fromtimestamp(v / 1000, timezone.utc) - now < timedelta(minutes=2) for v in payload.values()):
+            if any(
+                datetime.fromtimestamp(v / 1000, timezone.utc) - now
+                < timedelta(minutes=2)
+                for v in payload.values()
+            ):
                 # set user as connected to ui_state@wss_connections and ui_cmds@wss_connections
                 data = {UI_FASTMODE_AGENT_KEY: True}
                 run_fastmode = True
@@ -87,28 +138,19 @@ class DooverLegacyBridgeApplication(Application):
 
             if current_value is None or current_value != run_fastmode:
                 log.info(f"Publishing run_fastmode: {run_fastmode} to wss_connections.")
-                self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_state@wss_connections", data)
-                self.legacy_client.publish_to_channel_name(self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data)
+                self.legacy_client.publish_to_channel_name(
+                    self.config.legacy_agent_key.value, "ui_state@wss_connections", data
+                )
+                self.legacy_client.publish_to_channel_name(
+                    self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data
+                )
 
                 # important to set and publish this before we go running the sync loop to make sure
                 # it doesn't get run more than once
                 await self.set_tag("legacy_fastmode_sync_enabled", run_fastmode)
-                await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
-
-                if run_fastmode:
-                    for _ in range(28):
-                        # this is so hacky, potentially expensive and definitely bad practice (sleeping in lambda)
-                        # but it'll hopefully do...
-                        # update ui every 10 seconds for 4min 50sec (to allow cleanup before 5min limit)
-                        # if the user wants to keep watching after the 3min they need to
-                        # click out and click back into the device.
-                        log.info("Sleeping for 10 seconds.")
-                        await asyncio.sleep(10)
-                        await self.sync_channel("ui_state")
-                        await self.sync_channel("ui_cmds")
-                        await self.set_tag(
-                            "last_ui_sync", datetime.now(timezone.utc).timestamp()
-                        )
+                await self.api.publish_message(
+                    self.agent_id, "tag_values", self._tag_values
+                )
 
     async def on_schedule(self, event: ScheduleEvent):
         if self.config.legacy_agent_key.value == "placeholder":
@@ -117,7 +159,7 @@ class DooverLegacyBridgeApplication(Application):
 
         # don't run on a schedule any quicker than 5min
         last_ran = await self.get_last_ran()
-        if last_ran - datetime.now(timezone.utc) > timedelta(minutes=5):
+        if last_ran and last_ran - datetime.now(timezone.utc) > timedelta(minutes=5):
             return
 
         await self.sync_channel("ui_state")
@@ -134,20 +176,28 @@ class DooverLegacyBridgeApplication(Application):
         end = min(datetime.now(timezone.utc), start_time + timedelta(days=1))
         # if this is within today it'll report 0 which is no loop...
         for day in range((datetime.now(timezone.utc) - start_time).days or 1):
-            log.info(f"Getting messages for channel {channel_name} from start: {start} to end: {end}")
+            log.info(
+                f"Getting messages for channel {channel_name} from start: {start} to end: {end}"
+            )
 
             # pretty sure Doover 1.0 operates with `.now()` which uses AEST because the lambda is in ap-southeast-2
             start_aest = start.astimezone(ZoneInfo("Australia/Sydney"))
             end_aest = end.astimezone(ZoneInfo("Australia/Sydney"))
 
-            messages = self.legacy_client.get_channel_messages_in_window(channel_id, start_aest, end_aest)
+            messages = self.legacy_client.get_channel_messages_in_window(
+                channel_id, start_aest, end_aest
+            )
 
             log.info(f"Processing {len(messages)} messages...")
             for message in messages:
                 # .fetch_payload() won't do an api call because the endpoint above returns the message content
                 # inject in another key so we know not to publish it back to Doover 1.0
                 payload = message.fetch_payload()
-                payload["doover_legacy_bridge_at"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+                if isinstance(payload, dict):
+                    payload["doover_legacy_bridge_at"] = int(
+                        datetime.now(timezone.utc).timestamp() * 1000
+                    )
+
                 await self.api.publish_message(
                     self.agent_id,
                     channel_name,
@@ -163,11 +213,16 @@ class DooverLegacyBridgeApplication(Application):
                     "imported_messages",
                     await self.get_tag("imported_messages") + len(messages),
                 )
-                await self.set_tag(f"last_message_{channel_name}", max(m.timestamp for m in messages).timestamp())
+                await self.set_tag(
+                    f"last_message_{channel_name}",
+                    max(m.timestamp for m in messages).timestamp(),
+                )
                 await self.set_tag(
                     f"last_sync_{channel_name}", datetime.now(timezone.utc).timestamp()
                 )
-                await self.api.publish_message(self.agent_id, "tag_values", self._tag_values)
+                await self.api.publish_message(
+                    self.agent_id, "tag_values", self._tag_values
+                )
 
     async def determine_online_status(self):
         # first step, see if it's a DDA device with a websocket channel
@@ -187,7 +242,9 @@ class DooverLegacyBridgeApplication(Application):
         # these will never change so we should be good to cache them, it'll save an api request in future.
         channel_id = await self.get_tag(f"{channel_name}_channel_id")
         if not channel_id:
-            channel = self.legacy_client.get_channel_named(channel_name, self.config.legacy_agent_key.value)
+            channel = self.legacy_client.get_channel_named(
+                channel_name, self.config.legacy_agent_key.value
+            )
             channel_id = channel.id
             await self.set_tag(f"{channel_name}_channel_id", channel_id)
         return channel_id

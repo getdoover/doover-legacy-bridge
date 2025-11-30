@@ -8,13 +8,13 @@ uv pip install \
    --python-platform x86_64-manylinux2014 \
    --python 3.13 \
    --quiet \
-   --target packages \
+   --target packages_export \
    --refresh \
    -r requirements.txt
 
 rm -f package.zip
 
-cd packages
+cd packages_export
 zip -rq ../package.zip .
 cd ..
 
