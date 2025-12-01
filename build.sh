@@ -3,6 +3,7 @@
 uv export --frozen --no-dev --no-editable --quiet -o requirements.txt
 
 uv pip install \
+   --no-deps \
    --no-installer-metadata \
    --no-compile-bytecode \
    --python-platform x86_64-manylinux2014 \

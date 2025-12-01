@@ -1,10 +1,14 @@
 import logging
+import time
 from zoneinfo import ZoneInfo
 
 from pydoover.cloud.processor import (
     Application,
     MessageCreateEvent,
-    IngestionEndpointEvent,
+)
+from pydoover.cloud.processor.data_client import (
+    ConnectionStatus,
+    ConnectionDetermination,
 )
 from pydoover.cloud.processor.types import ScheduleEvent
 from pydoover.cloud.api import Client
@@ -47,47 +51,60 @@ class DooverLegacyBridgeApplication(Application):
         if self._legacy_client:
             self._legacy_client.session.close()
 
-    async def on_ingestion_endpoint(self, event: IngestionEndpointEvent):
-        if event.payload["event_name"] != "relay_channel_message":
-            log.info(f"Unknown event: {event.payload}.")
-            return
+    async def pre_hook_filter(self, event):
+        if isinstance(event, MessageCreateEvent):
+            if event.channel_name == "ui_cmds" and "doover_legacy_bridge_at" in event.message.diff:
+                # ignore any messages originating from doover 1.0
+                return False
 
-        legacy_agent_id = event.payload["agent_key"]
-        if legacy_agent_id == self.config.legacy_agent_key.value:
-            agent_id = self.agent_id
-        else:
-            log.error(f"Unknown legacy agent key: {legacy_agent_id}")
-            return
+            if event.channel_name == "ui_state-wss_connections" and "doover_legacy_bridge_at" not in event.message.diff:
+                # we only care about messages originating from doover 1.0
+                return False
 
-        channel_name = event.payload["channel_name"]
-        payload = event.payload["data"]
-        if not isinstance(payload, dict):
-            log.error(
-                f"Message '{payload}' not of correct type (object): '{type(payload)}'"
-            )
-            return
-        payload["imported_via_integration"] = True
+        return True
 
-        await self.api.publish_message(
-            agent_id,
-            channel_name,
-            data=payload,
-            timestamp=event.payload["timestamp"],
-            record_log=event.payload["record_log"],
-            is_diff=event.payload["is_diff"],
-        )
-        await self.set_tag(
-            "imported_messages", await self.get_tag("imported_messages") + 1
-        )
-
-        ts = event.payload["timestamp"] or datetime.now(tz=timezone.utc).timestamp()
-        if ts > await self.get_tag(f"last_message_{channel_name}", 0):
-            await self.set_tag(f"last_message_{channel_name}", ts)
-        await self.set_tag(
-            f"last_sync_{channel_name}", datetime.now(timezone.utc).timestamp()
-        )
-
-        log.info("Successfully forwarded message from Doover 1.0.")
+    #
+    # async def on_ingestion_endpoint(self, event: IngestionEndpointEvent):
+    #     if event.payload["event_name"] != "relay_channel_message":
+    #         log.info(f"Unknown event: {event.payload}.")
+    #         return
+    #
+    #     legacy_agent_id = event.payload["agent_key"]
+    #     if legacy_agent_id == self.config.legacy_agent_key.value:
+    #         agent_id = self.agent_id
+    #     else:
+    #         log.error(f"Unknown legacy agent key: {legacy_agent_id}")
+    #         return
+    #
+    #     channel_name = event.payload["channel_name"]
+    #     payload = event.payload["data"]
+    #     if not isinstance(payload, dict):
+    #         log.error(
+    #             f"Message '{payload}' not of correct type (object): '{type(payload)}'"
+    #         )
+    #         return
+    #     payload["doover_legacy_bridge_at"] = time.time() * 1000
+    #
+    #     await self.api.publish_message(
+    #         agent_id,
+    #         channel_name,
+    #         data=payload,
+    #         timestamp=event.payload["timestamp"],
+    #         record_log=event.payload["record_log"],
+    #         is_diff=event.payload["is_diff"],
+    #     )
+    #     await self.set_tag(
+    #         "imported_messages", await self.get_tag("imported_messages") + 1
+    #     )
+    #
+    #     ts = event.payload["timestamp"] or datetime.now(tz=timezone.utc).timestamp()
+    #     if ts > await self.get_tag(f"last_message_{channel_name}", 0):
+    #         await self.set_tag(f"last_message_{channel_name}", ts)
+    #     await self.set_tag(
+    #         f"last_sync_{channel_name}", datetime.now(timezone.utc).timestamp()
+    #     )
+    #
+    #     log.info("Successfully forwarded message from Doover 1.0.")
 
     async def on_message_create(self, event: MessageCreateEvent):
         # if self.config.import_mode.value is True:
@@ -102,16 +119,55 @@ class DooverLegacyBridgeApplication(Application):
         payload = event.message.data
         log.info(f"Received new message on channel: {event.channel_name}")
 
+        if event.channel_name == "ui_state-wss_connections":
+            # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
+            try:
+                online = event.message.data["connections"][
+                    self.config.legacy_agent_key.value
+                ]
+            except KeyError:
+                pass
+            else:
+                # hmm... this works for docker / wss based devices, but not schedules / processors.
+                # fixme: fix above
+                if online:
+                    status, determination = (
+                        ConnectionStatus.continuous_online,
+                        ConnectionDetermination.online,
+                    )
+                else:
+                    status, determination = (
+                        ConnectionStatus.continuous_offline,
+                        ConnectionDetermination.offline,
+                    )
+
+                await self.api.ping_connection_at(
+                    self.agent_id,
+                    datetime.now(timezone.utc),
+                    status,
+                    determination,
+                    user_agent="doover-legacy-bridge;forwarded-message",
+                    organisation_id=self.organisation_id,
+                )
+
         if event.channel_name == "ui_cmds":
             if "doover_legacy_bridge_at" in event.message.diff:
                 log.info("Ignoring message originally synced from Doover 1.0")
-            else:
-                log.info("Forwarding message to Doover 1.0")
-                self.legacy_client.publish_to_channel_name(
-                    self.config.legacy_agent_key.value,
-                    event.channel_name,
-                    event.message.diff,
-                )
+                return
+
+            log.info(
+                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.diff}"
+            )
+            # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
+            message = {
+                "cmds": event.message.diff,
+                "doover_legacy_bridge2_at": time.time() * 1000,
+            }
+            self.legacy_client.publish_to_channel_name(
+                self.config.legacy_agent_key.value,
+                event.channel_name,
+                message,
+            )
 
         if event.channel_name == "trigger_manual_sync":
             log.info("Manual sync requested")
@@ -127,11 +183,11 @@ class DooverLegacyBridgeApplication(Application):
                 for v in payload.values()
             ):
                 # set user as connected to ui_state@wss_connections and ui_cmds@wss_connections
-                data = {UI_FASTMODE_AGENT_KEY: True}
+                data = {"connections": {UI_FASTMODE_AGENT_KEY: True}}
                 run_fastmode = True
             else:
                 # unset them as not connected
-                data = {UI_FASTMODE_AGENT_KEY: False}
+                data = {"connections": {UI_FASTMODE_AGENT_KEY: None}}
                 run_fastmode = False
 
             current_value = await self.get_tag("legacy_fastmode_sync_enabled")
@@ -141,9 +197,9 @@ class DooverLegacyBridgeApplication(Application):
                 self.legacy_client.publish_to_channel_name(
                     self.config.legacy_agent_key.value, "ui_state@wss_connections", data
                 )
-                self.legacy_client.publish_to_channel_name(
-                    self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data
-                )
+                # self.legacy_client.publish_to_channel_name(
+                #     self.config.legacy_agent_key.value, "ui_cmds@wss_connections", data
+                # )
 
                 # important to set and publish this before we go running the sync loop to make sure
                 # it doesn't get run more than once

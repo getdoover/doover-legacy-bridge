@@ -1,4 +1,7 @@
 import logging
+import time
+
+from datetime import datetime, timezone
 
 from pydoover.cloud.processor import Application, IngestionEndpointEvent
 
@@ -12,8 +15,7 @@ class DooverLegacyBridgeApplication(Application):
             return
 
         legacy_agent_id = event.payload["agent_key"]
-
-        org_config = await self.get_tag("agent_lookup", {})
+        org_config = await self.get_tag("legacy_agent_lookup", {})
         try:
             agent_id = org_config[legacy_agent_id]
         except KeyError:
@@ -22,17 +24,31 @@ class DooverLegacyBridgeApplication(Application):
 
         channel_name = event.payload["channel_name"]
         payload = event.payload["data"]
-        payload["imported_via_integration"] = True
+        payload["doover_legacy_bridge_at"] = time.time() * 1000
 
+        try:
+            ts_data = event.payload["timestamp"]
+        except KeyError:
+            ts = datetime.now(timezone.utc)
+        else:
+            ts = datetime.fromtimestamp(ts_data / 1000.0).astimezone(timezone.utc)
+
+        record_log = event.payload["record_log"]
+        is_diff = event.payload["is_diff"]
+
+        log.info(
+            f"Relaying, agent: {agent_id}, channel: {channel_name}, message: {payload}, ts: {ts}, record_log: {record_log}, is_diff: {is_diff}"
+        )
+        log.info(f"Token: {self.api.session.headers['Authorization']}")
         await self.api.publish_message(
             agent_id,
             channel_name,
-            data=payload,
-            timestamp=event.payload["timestamp"],
-            record_log=event.payload["record_log"],
-            is_diff=event.payload["is_diff"],
+            message=payload,
+            timestamp=ts,
+            record_log=record_log,
+            is_diff=is_diff,
         )
         await self.set_tag(
-            "imported_messages", (await self.get_tag("imported_messages")) + 1
+            "imported_messages", (await self.get_tag("imported_messages", 0)) + 1
         )
         log.info("Successfully forwarded message from Doover 1.0.")
