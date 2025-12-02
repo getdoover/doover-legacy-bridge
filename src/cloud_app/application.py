@@ -53,11 +53,17 @@ class DooverLegacyBridgeApplication(Application):
 
     async def pre_hook_filter(self, event):
         if isinstance(event, MessageCreateEvent):
-            if event.channel_name == "ui_cmds" and "doover_legacy_bridge_at" in event.message.diff:
+            if (
+                event.channel_name == "ui_cmds"
+                and "doover_legacy_bridge_at" in event.message.diff
+            ):
                 # ignore any messages originating from doover 1.0
                 return False
 
-            if event.channel_name == "ui_state-wss_connections" and "doover_legacy_bridge_at" not in event.message.diff:
+            if (
+                event.channel_name == "ui_state-wss_connections"
+                and "doover_legacy_bridge_at" not in event.message.diff
+            ):
                 # we only care about messages originating from doover 1.0
                 return False
 
@@ -126,29 +132,29 @@ class DooverLegacyBridgeApplication(Application):
                     self.config.legacy_agent_key.value
                 ]
             except KeyError:
-                pass
-            else:
-                # hmm... this works for docker / wss based devices, but not schedules / processors.
-                # fixme: fix above
-                if online:
-                    status, determination = (
-                        ConnectionStatus.continuous_online,
-                        ConnectionDetermination.online,
-                    )
-                else:
-                    status, determination = (
-                        ConnectionStatus.continuous_offline,
-                        ConnectionDetermination.offline,
-                    )
+                online = False
 
-                await self.api.ping_connection_at(
-                    self.agent_id,
-                    datetime.now(timezone.utc),
-                    status,
-                    determination,
-                    user_agent="doover-legacy-bridge;forwarded-message",
-                    organisation_id=self.organisation_id,
+            # hmm... this works for docker / wss based devices, but not schedules / processors.
+            # fixme: fix above
+            if online:
+                status, determination = (
+                    ConnectionStatus.continuous_online,
+                    ConnectionDetermination.online,
                 )
+            else:
+                status, determination = (
+                    ConnectionStatus.continuous_offline,
+                    ConnectionDetermination.offline,
+                )
+
+            await self.api.ping_connection_at(
+                self.agent_id,
+                datetime.now(timezone.utc),
+                status,
+                determination,
+                user_agent="doover-legacy-bridge;forwarded-message",
+                organisation_id=self.organisation_id,
+            )
 
         if event.channel_name == "ui_cmds":
             if "doover_legacy_bridge_at" in event.message.diff:
@@ -163,6 +169,11 @@ class DooverLegacyBridgeApplication(Application):
                 "cmds": event.message.diff,
                 "doover_legacy_bridge2_at": time.time() * 1000,
             }
+
+            if self.config.read_only.value:
+                log.info("Read only mode enabled, not writing message to Doover 1.0.")
+                return
+
             self.legacy_client.publish_to_channel_name(
                 self.config.legacy_agent_key.value,
                 event.channel_name,
@@ -194,6 +205,13 @@ class DooverLegacyBridgeApplication(Application):
 
             if current_value is None or current_value != run_fastmode:
                 log.info(f"Publishing run_fastmode: {run_fastmode} to wss_connections.")
+
+                if self.config.read_only.value:
+                    log.info(
+                        "Read only mode enabled, not writing message to Doover 1.0."
+                    )
+                    return
+
                 self.legacy_client.publish_to_channel_name(
                     self.config.legacy_agent_key.value, "ui_state@wss_connections", data
                 )

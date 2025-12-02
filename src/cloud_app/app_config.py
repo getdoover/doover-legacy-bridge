@@ -16,6 +16,10 @@ class DooverLegacyBridgeConfig(DooverLegacyBridgeCommonConfig):
 
         self.legacy_agent_key = config.String("Agent Key")
         self.import_mode = config.Boolean("Import Mode")
+        self.read_only = config.Boolean(
+            "Read Only",
+            description="If this is enabled, no messages will be written back to Doover 1.0, ever.",
+        )
 
 
 def export():
