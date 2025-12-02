@@ -19,6 +19,7 @@ class DooverLegacyBridgeConfig(DooverLegacyBridgeCommonConfig):
         self.read_only = config.Boolean(
             "Read Only",
             description="If this is enabled, no messages will be written back to Doover 1.0, ever.",
+            default=False,
         )
 
 

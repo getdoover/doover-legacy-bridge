@@ -253,7 +253,8 @@
                     "x-name": "read_only",
                     "x-hidden": false,
                     "type": "boolean",
-                    "description": "If this is enabled, no messages will be written back to Doover 1.0, ever."
+                    "description": "If this is enabled, no messages will be written back to Doover 1.0, ever.",
+                    "default": false
                 }
             },
             "additionalElements": true,
@@ -263,8 +264,7 @@
                 "dv_proc_subscriptions",
                 "dv_proc_schedules",
                 "agent_key",
-                "import_mode",
-                "read_only"
+                "import_mode"
             ]
         },
         "id": null,
