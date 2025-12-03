@@ -19,6 +19,7 @@ class DooverLegacyBridgeApplication(Application):
         try:
             agent_id = org_config[legacy_agent_id]
         except KeyError:
+            log.info(f"Payload: {event.payload}")
             log.error(f"Unknown legacy agent key: {legacy_agent_id}")
             return
 
