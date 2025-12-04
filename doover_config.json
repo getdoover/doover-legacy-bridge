@@ -14,6 +14,7 @@
         "build_args": "--platform linux/amd64,linux/arm64",
         "export_config_command": "export-config_integration",
         "run_command": null,
+        "required_permissions": "4294967294",
         "staging_config": {
             "owner_org_id": null,
             "container_registry_profile_id": 7369503425484439552,
@@ -78,7 +79,8 @@
                             "x-name": "signing_key",
                             "x-hidden": false,
                             "type": "string",
-                            "description": "Private SHA256 signing key for the request. While not recommended, this may be `None` if no signed hash verification is required."
+                            "description": "Private SHA256 signing key for the request. While not recommended, this may be `None` if no signed hash verification is required.",
+                            "default": ""
                         },
                         "sha256_hash_header": {
                             "title": "SHA256 Hash Header",
@@ -110,36 +112,89 @@
                             "x-name": "mini_token",
                             "x-hidden": false,
                             "type": "boolean",
-                            "description": "Enable this to generate a mini token for use with the ingestion endpoint. Mini tokens are ~70 bytes, compared with the ~900 bytes of a regular token. Generally, this is not advised as it adds complexity and latency to ingestion calls, however may be desirable in especially low-bandwidth and embedded environments. There is no security difference in the two tokens."
+                            "description": "Enable this to generate a mini token for use with the ingestion endpoint. Mini tokens are ~70 bytes, compared with the ~900 bytes of a regular token. Generally, this is not advised as it adds complexity and latency to ingestion calls, however may be desirable in especially low-bandwidth and embedded environments. There is no security difference in the two tokens.",
+                            "default": false
                         }
                     },
                     "additionalElements": true,
                     "required": [
-                        "cidr_ranges",
-                        "signing_key",
-                        "mini_token"
+                        "cidr_ranges"
                     ]
                 },
-                "dv_proc_devices": {
-                    "title": "Devices",
-                    "x-name": "dv_proc_devices",
+                "dv_proc_extended_permissions": {
+                    "title": "Extended Permissions",
+                    "x-name": "dv_proc_extended_permissions",
                     "x-hidden": false,
-                    "type": "array",
-                    "description": "A list of devices to generate reports for.",
-                    "items": {
-                        "title": "Device",
-                        "x-name": "dv_proc_devices",
-                        "x-hidden": false,
-                        "type": "string",
-                        "pattern": "\\d+",
-                        "format": "doover-device"
-                    }
+                    "type": "object",
+                    "description": "Enable extended permissions and access to other devices.",
+                    "properties": {
+                        "devices": {
+                            "title": "Devices",
+                            "x-name": "devices",
+                            "x-hidden": false,
+                            "type": "array",
+                            "description": "List of devices to grant extended permissions to.",
+                            "items": {
+                                "title": "Device",
+                                "x-name": "device",
+                                "x-hidden": false,
+                                "type": "string",
+                                "description": "Device ID",
+                                "format": "doover-device",
+                                "pattern": "\\d+"
+                            }
+                        },
+                        "groups": {
+                            "title": "Groups",
+                            "x-name": "groups",
+                            "x-hidden": false,
+                            "type": "array",
+                            "description": "List of groups to grant permissions to.",
+                            "items": {
+                                "title": "Group",
+                                "x-name": "group",
+                                "x-hidden": false,
+                                "type": "string",
+                                "description": "Group ID",
+                                "format": "doover-group",
+                                "pattern": "\\d+"
+                            }
+                        },
+                        "apps_installed": {
+                            "title": "Apps Installed",
+                            "x-name": "apps_installed",
+                            "x-hidden": false,
+                            "type": "array",
+                            "description": "Permission will be given to any devices which have any of the apps listed installed.",
+                            "items": {
+                                "format": "doover-application",
+                                "title": "Application",
+                                "x-name": "application",
+                                "x-hidden": false,
+                                "type": "string"
+                            }
+                        },
+                        "all_devices": {
+                            "title": "All Devices",
+                            "x-name": "all_devices",
+                            "x-hidden": false,
+                            "type": "boolean",
+                            "description": "Permission will be given for all devices in this organisation. This is a very far-reaching permission to grant!",
+                            "default": false
+                        }
+                    },
+                    "additionalElements": true,
+                    "required": [
+                        "devices",
+                        "groups",
+                        "apps_installed"
+                    ]
                 }
             },
             "additionalElements": true,
             "required": [
                 "dv_proc_ingestion",
-                "dv_proc_devices"
+                "dv_proc_extended_permissions"
             ]
         },
         "id": "121761514704087553",
