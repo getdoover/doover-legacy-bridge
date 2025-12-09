@@ -10,10 +10,15 @@ from pydoover.cloud.processor.data_client import (
     ConnectionStatus,
     ConnectionDetermination,
 )
-from pydoover.cloud.processor.types import ScheduleEvent
+from pydoover.cloud.processor.types import (
+    ScheduleEvent,
+    ConnectionType,
+    ConnectionConfig,
+)
 from pydoover.cloud.api import Client
 from datetime import datetime, timezone, timedelta
 
+from legacy_bridge_common.utils import get_connection_info
 from .app_config import DooverLegacyBridgeConfig
 
 log = logging.getLogger()
@@ -65,6 +70,18 @@ class DooverLegacyBridgeApplication(Application):
                 and "doover_legacy_bridge_at" not in event.message.diff
             ):
                 # we only care about messages originating from doover 1.0
+                return False
+
+            if event.channel_name == "ui_state" and not (
+                get_connection_info(event.message.data)
+                and "doover_legacy_bridge_at" in event.message.diff
+            ):
+                # if this is a processor-based application we need to reach into ui_state and fetch any connection info
+                # so we can update the connection status
+                # we also only care about any messages from doover 1.0
+                log.info(
+                    "Message was for ui_state but no connection config was defined. Skipping..."
+                )
                 return False
 
         return True
@@ -124,6 +141,23 @@ class DooverLegacyBridgeApplication(Application):
 
         payload = event.message.data
         log.info(f"Received new message on channel: {event.channel_name}")
+
+        if event.channel_name == "ui_state":
+            # if this is a processor-based application we need to reach into ui_state and fetch any connection info
+            # so we can update the connection status
+            config = ConnectionConfig.from_v1(get_connection_info(event.message.data))
+            if config.connection_type is not ConnectionType.continuous:
+                # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
+                # so just mimic that here.
+                log.info("Detected ui_state message on period connection. Pinging...")
+                await self.ping_connection()
+
+            if config == self.connection_config:
+                log.info("Connection config unchanged. Skipping...")
+                return
+
+            # we could probably combine this with the ping above
+            await self.api.update_connection_config(self.agent_id, config)
 
         if event.channel_name == "ui_state-wss_connections":
             # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
