@@ -1,3 +1,4 @@
+import base64
 import logging
 import time
 
@@ -9,6 +10,40 @@ log = logging.getLogger()
 
 
 class DooverLegacyBridgeApplication(Application):
+    async def handle_camera_message(
+        self, agent_id, channel_name, payload: dict, timestamp: datetime
+    ):
+        log.info("Handling camera message.")
+
+        data = payload["output"]
+        del payload["output"]
+
+        cam_name = payload["camera_name"]
+        file_type = payload["output_type"]
+
+        data_bytes = base64.b64decode(data)
+
+        match file_type:
+            case "mp4":
+                content_type = "video/mp4"
+            case "jpg" | "jpeg":
+                content_type = "image/jpeg"
+            case _:
+                # generic binary, this really shouldn't happen
+                content_type = "application/octet-stream"
+
+        file = (f"{cam_name}.{file_type}", data_bytes, content_type)
+
+        await self.api.publish_message(
+            agent_id,
+            channel_name,
+            message=payload,
+            files=[file],
+            timestamp=timestamp,
+            record_log=True,
+            is_diff=False,
+        )
+
     async def on_ingestion_endpoint(self, event: IngestionEndpointEvent):
         if event.payload["event_name"] != "relay_channel_message":
             log.info(f"Unknown event: {event.payload}.")
@@ -25,6 +60,16 @@ class DooverLegacyBridgeApplication(Application):
 
         channel_name = event.payload["channel_name"]
         payload = event.payload["data"]
+
+        if channel_name == "ui_cmds":
+            # basically, doover 2.0 doesn't want the 'cmds' nested key.
+            # it also adds it back in when publishing to doover 1.0 because it knows we need it here.
+            # however, we should be nice and remove the cmds key for now
+            try:
+                payload = payload["cmds"]
+            except KeyError:
+                pass
+
         payload["doover_legacy_bridge_at"] = time.time() * 1000
 
         try:
@@ -40,15 +85,23 @@ class DooverLegacyBridgeApplication(Application):
         log.info(
             f"Relaying, agent: {agent_id}, channel: {channel_name}, message: {payload}, ts: {ts}, record_log: {record_log}, is_diff: {is_diff}"
         )
-        log.info(f"Token: {self.api.session.headers['Authorization']}")
-        await self.api.publish_message(
-            agent_id,
-            channel_name,
-            message=payload,
-            timestamp=ts,
-            record_log=record_log,
-            is_diff=is_diff,
-        )
+
+        if "camera_name" in payload and payload.get("output_type") in (
+            "jpeg",
+            "jpg",
+            "mp4",
+        ):
+            await self.handle_camera_message(agent_id, channel_name, payload, ts)
+        else:
+            await self.api.publish_message(
+                agent_id,
+                channel_name,
+                message=payload,
+                timestamp=ts,
+                record_log=record_log,
+                is_diff=is_diff,
+            )
+
         await self.set_tag(
             "imported_messages", (await self.get_tag("imported_messages", 0)) + 1
         )

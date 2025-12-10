@@ -73,7 +73,7 @@ class DooverLegacyBridgeApplication(Application):
                 return False
 
             if event.channel_name == "ui_state" and not (
-                get_connection_info(event.message.data)
+                get_connection_info(event.message.data.get("state", {}))
                 and "doover_legacy_bridge_at" in event.message.diff
             ):
                 # if this is a processor-based application we need to reach into ui_state and fetch any connection info
@@ -145,7 +145,9 @@ class DooverLegacyBridgeApplication(Application):
         if event.channel_name == "ui_state":
             # if this is a processor-based application we need to reach into ui_state and fetch any connection info
             # so we can update the connection status
-            config = ConnectionConfig.from_v1(get_connection_info(event.message.data))
+            config = ConnectionConfig.from_v1(
+                get_connection_info(payload.get("state", {}))
+            )
             if config.connection_type is not ConnectionType.continuous:
                 # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
                 # so just mimic that here.
@@ -160,6 +162,10 @@ class DooverLegacyBridgeApplication(Application):
             await self.api.update_connection_config(self.agent_id, config)
 
         if event.channel_name == "ui_state-wss_connections":
+            if self.connection_config.connection_type is ConnectionType.periodic:
+                log.info("Detected ui_state-wss_connections message on period connection. Skipping...")
+                return
+
             # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
             try:
                 online = event.message.data["connections"][
@@ -168,11 +174,14 @@ class DooverLegacyBridgeApplication(Application):
             except KeyError:
                 online = False
 
-            # hmm... this works for docker / wss based devices, but not schedules / processors.
-            # fixme: fix above
             if online:
                 status, determination = (
                     ConnectionStatus.continuous_online,
+                    ConnectionDetermination.online,
+                )
+            elif self.connection_config.connection_type is ConnectionType.periodic_continuous:
+                status, determination = (
+                    ConnectionStatus.continuous_pending,
                     ConnectionDetermination.online,
                 )
             else:

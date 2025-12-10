@@ -167,11 +167,12 @@
                             "type": "array",
                             "description": "Permission will be given to any devices which have any of the apps listed installed.",
                             "items": {
-                                "format": "doover-application",
                                 "title": "Application",
                                 "x-name": "application",
                                 "x-hidden": false,
-                                "type": "string"
+                                "type": "string",
+                                "description": "Application",
+                                "format": "doover-application"
                             }
                         },
                         "all_devices": {
