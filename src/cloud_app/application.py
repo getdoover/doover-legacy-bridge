@@ -6,11 +6,9 @@ from pydoover.cloud.processor import (
     Application,
     MessageCreateEvent,
 )
-from pydoover.cloud.processor.data_client import (
+from pydoover.cloud.processor.types import (
     ConnectionStatus,
     ConnectionDetermination,
-)
-from pydoover.cloud.processor.types import (
     ScheduleEvent,
     ConnectionType,
     ConnectionConfig,
@@ -163,7 +161,9 @@ class DooverLegacyBridgeApplication(Application):
 
         if event.channel_name == "ui_state-wss_connections":
             if self.connection_config.connection_type is ConnectionType.periodic:
-                log.info("Detected ui_state-wss_connections message on period connection. Skipping...")
+                log.info(
+                    "Detected ui_state-wss_connections message on period connection. Skipping..."
+                )
                 return
 
             # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
@@ -175,11 +175,16 @@ class DooverLegacyBridgeApplication(Application):
                 online = False
 
             if online:
+                # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
+                # if a message doesn't get published to this channel at least once every few minutes.
                 status, determination = (
-                    ConnectionStatus.continuous_online,
+                    ConnectionStatus.continuous_online_no_ping,
                     ConnectionDetermination.online,
                 )
-            elif self.connection_config.connection_type is ConnectionType.periodic_continuous:
+            elif (
+                self.connection_config.connection_type
+                is ConnectionType.periodic_continuous
+            ):
                 status, determination = (
                     ConnectionStatus.continuous_pending,
                     ConnectionDetermination.online,
