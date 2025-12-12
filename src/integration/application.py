@@ -102,6 +102,18 @@ class DooverLegacyBridgeApplication(Application):
                 is_diff=is_diff,
             )
 
+        num_messages = await self.get_tag(f"num_messages_synced_{agent_id}", 0)
+        await self.set_tag(f"num_messages_synced_{agent_id}", num_messages + 1)
+        await self.api.publish_message(
+            agent_id,
+            "tag_values",
+            message={
+                self.app_key: {
+                    "num_messages_synced": num_messages + 1,
+                    "last_message_dt": datetime.now(timezone.utc).timestamp(),
+                }
+            },
+        )
         await self.set_tag(
             "imported_messages", (await self.get_tag("imported_messages", 0)) + 1
         )

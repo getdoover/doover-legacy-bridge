@@ -37,7 +37,7 @@
         "lambda_config": {
             "Environment": {
                 "Variables": {
-                    "DOOVER_DATA_ENDPOINT": "https://data.udoover.com/api"
+                    "DOOVER_DATA_ENDPOINT": "https://data.doover.com/api"
                 }
             },
             "Runtime": "python3.13",
@@ -241,7 +241,7 @@
         "lambda_config": {
             "Environment": {
                 "Variables": {
-                    "DOOVER_DATA_ENDPOINT": "https://data.udoover.com/api"
+                    "DOOVER_DATA_ENDPOINT": "https://data.doover.com/api"
                 }
             },
             "Runtime": "python3.13",
