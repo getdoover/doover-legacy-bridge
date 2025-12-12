@@ -284,25 +284,11 @@
                         "description": "The name of the channel to subscribe to"
                     }
                 },
-                "dv_proc_schedules": {
-                    "title": "Schedule",
-                    "x-name": "dv_proc_schedules",
-                    "x-hidden": false,
-                    "type": "integer",
-                    "description": "The interval in minutes to run the task. 0 to disable.",
-                    "minimum": 0
-                },
                 "agent_key": {
                     "title": "Agent Key",
                     "x-name": "agent_key",
                     "x-hidden": false,
                     "type": "string"
-                },
-                "import_mode": {
-                    "title": "Import Mode",
-                    "x-name": "import_mode",
-                    "x-hidden": false,
-                    "type": "boolean"
                 },
                 "read_only": {
                     "title": "Read Only",
@@ -318,9 +304,7 @@
                 "legacy_api_key",
                 "legacy_api_url",
                 "dv_proc_subscriptions",
-                "dv_proc_schedules",
-                "agent_key",
-                "import_mode"
+                "agent_key"
             ]
         },
         "id": "121761649060227588",

@@ -260,13 +260,22 @@ class DooverLegacyBridgeApplication(Application):
 
         log.info(f"Fetched channel {channel_name} from doover 1.0, sending to doover 2.0...")
 
+        await self.set_tag("num_messages_synced", (await self.get_tag("num_messages_synced", 0)) + 1)
+        await self.set_tag("last_manual_sync", datetime.now(timezone.utc).timestamp())
+
         if channel_name == "tag_values":
             if self.app_key not in data:
                 data[self.app_key] = {}
             # if we don't do this we'll overwrite the existing counters!
-            data[self.app_key]["last_manual_sync"] = datetime.now(timezone.utc).timestamp()
-            data[self.app_key]["num_messages_synced"] = (await self.get_tag("num_messages_synced", 0)) + 1
+            data[self.app_key]["last_manual_sync"] = await self.get_tag("last_manual_sync")
+            data[self.app_key]["num_messages_synced"] = await self.get_tag("num_messages_synced")
             data[self.app_key]["last_message_dt"] = await self.get_tag("last_message_dt")
+
+        if channel_name == "deployment_config":
+            if "applications" not in data:
+                data["applications"] = {}
+
+            data["applications"][self.app_key] = self.received_deployment_config
 
         # do a hard sync, record the log and don't diff.
         await self.api.publish_message(
