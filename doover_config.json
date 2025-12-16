@@ -138,9 +138,9 @@
                                 "title": "Device",
                                 "x-name": "device",
                                 "x-hidden": false,
+                                "format": "doover-resource-device",
                                 "type": "string",
                                 "description": "Device ID",
-                                "format": "doover-device",
                                 "pattern": "\\d+"
                             }
                         },
@@ -154,9 +154,9 @@
                                 "title": "Group",
                                 "x-name": "group",
                                 "x-hidden": false,
+                                "format": "doover-resource-group",
                                 "type": "string",
                                 "description": "Group ID",
-                                "format": "doover-group",
                                 "pattern": "\\d+"
                             }
                         },
@@ -170,9 +170,9 @@
                                 "title": "Application",
                                 "x-name": "application",
                                 "x-hidden": false,
+                                "format": "doover-resource-application",
                                 "type": "string",
-                                "description": "Application",
-                                "format": "doover-application"
+                                "description": "Application"
                             }
                         },
                         "all_devices": {

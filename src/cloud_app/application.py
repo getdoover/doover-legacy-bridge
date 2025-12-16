@@ -12,11 +12,12 @@ from pydoover.cloud.processor.types import (
     ScheduleEvent,
     ConnectionType,
     ConnectionConfig,
+    ManualInvokeEvent,
 )
 from pydoover.cloud.api import Client, NotFound
 from datetime import datetime, timezone, timedelta
 
-from legacy_bridge_common.utils import get_connection_info
+from legacy_bridge_common.utils import get_connection_info, parse_file
 from .app_config import DooverLegacyBridgeConfig
 
 log = logging.getLogger()
@@ -57,7 +58,7 @@ class DooverLegacyBridgeApplication(Application):
     async def pre_hook_filter(self, event):
         if isinstance(event, MessageCreateEvent):
             if (
-                event.channel_name == "ui_cmds"
+                event.channel_name in ("ui_cmds", "tunnels")
                 and "doover_legacy_bridge_at" in event.message.diff
             ):
                 # ignore any messages originating from doover 1.0
@@ -98,7 +99,16 @@ class DooverLegacyBridgeApplication(Application):
             config = ConnectionConfig.from_v1(
                 get_connection_info(payload.get("state", {}))
             )
-            if config.connection_type is not ConnectionType.continuous:
+            if config.connection_type is ConnectionType.continuous:
+                await self.api.ping_connection_at(
+                    self.agent_id,
+                    datetime.now(timezone.utc),
+                    ConnectionStatus.continuous_online_no_ping,
+                    ConnectionDetermination.online,
+                    user_agent="doover-legacy-bridge;ui-state-config",
+                    organisation_id=self.organisation_id,
+                )
+            else:
                 # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
                 # so just mimic that here.
                 log.info("Detected ui_state message on period connection. Pinging...")
@@ -112,7 +122,7 @@ class DooverLegacyBridgeApplication(Application):
             await self.api.update_connection_config(self.agent_id, config)
 
         if event.channel_name == "ui_state-wss_connections":
-            if self.connection_config.connection_type is ConnectionType.periodic:
+            if self.connection_config and self.connection_config.connection_type is ConnectionType.periodic:
                 log.info(
                     "Detected ui_state-wss_connections message on period connection. Skipping..."
                 )
@@ -134,7 +144,7 @@ class DooverLegacyBridgeApplication(Application):
                     ConnectionDetermination.online,
                 )
             elif (
-                self.connection_config.connection_type
+                self.connection_config and self.connection_config.connection_type
                 is ConnectionType.periodic_continuous
             ):
                 status, determination = (
@@ -156,19 +166,18 @@ class DooverLegacyBridgeApplication(Application):
                 organisation_id=self.organisation_id,
             )
 
-        if event.channel_name == "ui_cmds":
-            if "doover_legacy_bridge_at" in event.message.diff:
-                log.info("Ignoring message originally synced from Doover 1.0")
-                return
-
+        if event.channel_name in ("ui_cmds", "tunnels"):
             log.info(
                 f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.diff}"
             )
-            # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
-            message = {
-                "cmds": event.message.diff,
-                "doover_legacy_bridge2_at": time.time() * 1000,
-            }
+
+            if event.channel_name == "ui_cmds":
+                # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
+                message: dict = {"cmds": event.message.diff}
+            else:
+                message: dict = event.message.diff
+
+            message["doover_legacy_bridge2_at"] = time.time() * 1000
 
             if self.config.read_only.value:
                 log.info("Read only mode enabled, not writing message to Doover 1.0.")
@@ -182,7 +191,7 @@ class DooverLegacyBridgeApplication(Application):
 
         if event.channel_name == "trigger_manual_sync":
             log.info(f"Manual sync requested. Token: {self.api.session.headers['Authorization']}")
-            await self.on_manual_invoke()
+            await self.on_manual_invoke(ManualInvokeEvent(self.organisation_id, "{}"))
 
         if event.channel_name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
@@ -229,7 +238,7 @@ class DooverLegacyBridgeApplication(Application):
         # and the user can request a manual sync if they want
         return
 
-    async def on_manual_invoke(self):
+    async def on_manual_invoke(self, event: ManualInvokeEvent):
         try:
             agent = self.legacy_client.client.get_agent(
                 self.config.legacy_agent_key.value
@@ -278,13 +287,24 @@ class DooverLegacyBridgeApplication(Application):
             data["applications"][self.app_key] = self.received_deployment_config
 
         # do a hard sync, record the log and don't diff.
-        await self.api.publish_message(
-            self.agent_id,
-            channel_name,
-            data,
-            record_log=True,
-            is_diff=False,
-        )
+        if "output_type" in data and "output" in data:
+            payload, file = parse_file(channel_name, data)
+            await self.api.publish_message(
+                self.agent_id,
+                channel_name,
+                message=payload,
+                files=[file],
+                record_log=True,
+                is_diff=False,
+            )
+        else:
+            await self.api.publish_message(
+                self.agent_id,
+                channel_name,
+                data,
+                record_log=True,
+                is_diff=False,
+            )
 
     async def get_or_fetch_channel_id(self, channel_name):
         # these will never change so we should be good to cache them, it'll save an api request in future.
