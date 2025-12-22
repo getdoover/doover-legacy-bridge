@@ -6,7 +6,7 @@ import mimetypes
 log = logging.getLogger(__name__)
 
 def get_connection_info(payload) -> dict | None:
-    for k, v in payload["children"].items():
+    for k, v in payload.get("children", {}).items():
         if v.get("type") == "uiConnectionInfo":
             return v
 
@@ -48,3 +48,18 @@ def parse_file(channel_name: str, payload: dict):
 
     file = (f"{channel_name}{extension}", data_bytes, content_type)
     return payload, file
+
+
+def nested_find_replace(payload, key, old, new):
+    try:
+        existing = payload[key]
+    except KeyError:
+        pass
+    else:
+        if existing == old:
+            payload[key] = new
+
+    if "children" in payload:
+        nested_find_replace(payload["children"], key, old, new)
+
+    return payload

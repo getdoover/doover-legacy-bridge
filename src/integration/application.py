@@ -5,12 +5,15 @@ from datetime import datetime, timezone
 
 from pydoover.cloud.processor import Application, IngestionEndpointEvent
 
-from legacy_bridge_common.utils import parse_file
+from legacy_bridge_common.utils import parse_file, nested_find_replace
 
 log = logging.getLogger()
 
 
 class DooverLegacyBridgeApplication(Application):
+    async def setup(self):
+        self._record_tag_update = False
+
     async def on_ingestion_endpoint(self, event: IngestionEndpointEvent):
         if event.payload["event_name"] != "relay_channel_message":
             log.info(f"Unknown event: {event.payload}.")
@@ -36,6 +39,15 @@ class DooverLegacyBridgeApplication(Application):
                 payload = payload["cmds"]
             except KeyError:
                 pass
+
+        if channel_name == "ui_state":
+            try:
+                state = payload["state"]
+            except KeyError:
+                pass
+            else:
+                nested_find_replace(state, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
+            # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
 
         payload["doover_legacy_bridge_at"] = time.time() * 1000
 

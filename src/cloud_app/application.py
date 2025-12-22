@@ -30,6 +30,9 @@ UI_FASTMODE_AGENT_KEY = "df4108e0-7bef-459c-8b58-5c26360517e7"
 class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
 
+    async def setup(self):
+        self._record_tag_update = False
+
     @property
     def legacy_client(self):
         if self._legacy_client is None:
@@ -85,6 +88,37 @@ class DooverLegacyBridgeApplication(Application):
 
         return True
 
+    async def handle_connection_config(self, payload: dict):
+        # if this is a processor-based application we need to reach into ui_state and fetch any connection info
+        # so we can update the connection status
+        connection_data = get_connection_info(payload.get("state", {}))
+        if not connection_data:
+            log.info("No connection data found, skipping...")
+            return
+
+        config = ConnectionConfig.from_v1(connection_data)
+        if config.connection_type is ConnectionType.continuous:
+            await self.api.ping_connection_at(
+                self.agent_id,
+                datetime.now(timezone.utc),
+                ConnectionStatus.continuous_online_no_ping,
+                ConnectionDetermination.online,
+                user_agent="doover-legacy-bridge;ui-state-config",
+                organisation_id=self.organisation_id,
+            )
+        else:
+            # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
+            # so just mimic that here.
+            log.info("Detected ui_state message on period connection. Pinging...")
+            await self.ping_connection()
+
+        if config == self.connection_config:
+            log.info("Connection config unchanged. Skipping...")
+            return
+
+        # we could probably combine this with the ping above
+        await self.api.update_connection_config(self.agent_id, config)
+
     async def on_message_create(self, event: MessageCreateEvent):
         if self.config.legacy_agent_key.value == "placeholder":
             log.info("Legacy agent key not set, not running processor.")
@@ -94,37 +128,12 @@ class DooverLegacyBridgeApplication(Application):
         log.info(f"Received new message on channel: {event.channel_name}")
 
         if event.channel_name == "ui_state":
-            # if this is a processor-based application we need to reach into ui_state and fetch any connection info
-            # so we can update the connection status
-            config = ConnectionConfig.from_v1(
-                get_connection_info(payload.get("state", {}))
-            )
-            if config.connection_type is ConnectionType.continuous:
-                await self.api.ping_connection_at(
-                    self.agent_id,
-                    datetime.now(timezone.utc),
-                    ConnectionStatus.continuous_online_no_ping,
-                    ConnectionDetermination.online,
-                    user_agent="doover-legacy-bridge;ui-state-config",
-                    organisation_id=self.organisation_id,
-                )
-            else:
-                # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
-                # so just mimic that here.
-                log.info("Detected ui_state message on period connection. Pinging...")
-                await self.ping_connection()
-
-            if config == self.connection_config:
-                log.info("Connection config unchanged. Skipping...")
-                return
-
-            # we could probably combine this with the ping above
-            await self.api.update_connection_config(self.agent_id, config)
+            await self.handle_connection_config(payload)
 
         if event.channel_name == "ui_state-wss_connections":
             if self.connection_config and self.connection_config.connection_type is ConnectionType.periodic:
                 log.info(
-                    "Detected ui_state-wss_connections message on period connection. Skipping..."
+                    "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
                 )
                 return
 
@@ -285,6 +294,17 @@ class DooverLegacyBridgeApplication(Application):
                 data["applications"] = {}
 
             data["applications"][self.app_key] = self.received_deployment_config
+
+        if channel_name == "ui_state":
+            # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
+            await self.handle_connection_config(data)
+
+        if channel_name == "ui_cmds":
+            try:
+                # doover 1.0 wraps everything in 'cmds'... we don't do that here (in doover 2.0)!
+                data = data["cmds"]
+            except KeyError:
+                pass
 
         # do a hard sync, record the log and don't diff.
         if "output_type" in data and "output" in data:
