@@ -87,7 +87,7 @@ class DooverLegacyBridgeApplication(Application):
             )
 
         num_messages = await self.get_tag(f"num_messages_synced_{agent_id}", 0)
-        await self.set_tag(f"num_messages_synced_{agent_id}", num_messages + 1)
+        # await self.set_tag(f"num_messages_synced_{agent_id}", num_messages + 1)
         await self.api.publish_message(
             agent_id,
             "tag_values",
@@ -98,7 +98,7 @@ class DooverLegacyBridgeApplication(Application):
                 }
             },
         )
-        await self.set_tag(
-            "imported_messages", (await self.get_tag("imported_messages", 0)) + 1
-        )
+        # await self.set_tag(
+        #     "imported_messages", (await self.get_tag("imported_messages", 0)) + 1
+        # )
         log.info("Successfully forwarded message from Doover 1.0.")
