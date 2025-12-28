@@ -30,9 +30,6 @@ UI_FASTMODE_AGENT_KEY = "df4108e0-7bef-459c-8b58-5c26360517e7"
 class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
 
-    async def setup(self):
-        self._record_tag_update = False
-
     @property
     def legacy_client(self):
         if self._legacy_client is None:
@@ -49,6 +46,7 @@ class DooverLegacyBridgeApplication(Application):
 
         # only make this when we actually need it because it takes forever (~2s)...
         self._legacy_client = None
+        self._record_tag_update = False
 
         num_imported_messages = await self.get_tag("imported_messages")
         if num_imported_messages is None:

@@ -63,3 +63,14 @@ def nested_find_replace(payload, key, old, new):
         nested_find_replace(payload["children"], key, old, new)
 
     return payload
+
+def find_element(key, payload):
+    try:
+        return payload[key]
+    except KeyError:
+        pass
+
+    if "children" in payload:
+        find_element(key, payload["children"])
+
+    raise KeyError(f"key '{key}' not found.")
