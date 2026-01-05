@@ -96,7 +96,7 @@ class DooverLegacyBridgeApplication(Application):
                     "name": payload["author_name"],
                     "legacy_agent_key": payload["author_key"],
                 }
-                await self.handle_ui_cmds_update(agent_id, actor, payload, ui_state.aggregate)
+                await self.handle_ui_cmds_update(agent_id, actor, payload, ui_state.aggregate.data)
 
         if channel_name == "ui_state":
             try:
@@ -160,6 +160,10 @@ class DooverLegacyBridgeApplication(Application):
 
         if "output_type" in payload and "output" in payload:
             payload, file = parse_file(channel_name, payload)
+            if record_log:
+                await self.api.publish_message(agent_id, channel_name, message=payload, files=[file], timestamp=ts)
+
+            await self.api.update_aggregate(agent_id, channel_name, payload)
             await self.api.publish_message(
                 agent_id,
                 channel_name,
@@ -170,13 +174,15 @@ class DooverLegacyBridgeApplication(Application):
                 is_diff=False,
             )
         else:
-            await self.api.publish_message(
+            if record_log:
+                await self.api.publish_message(agent_id, channel_name, message=payload, timestamp=ts)
+
+            await self.api.update_aggregate(
                 agent_id,
                 channel_name,
-                message=payload,
+                data=payload,
                 timestamp=ts,
-                record_log=record_log,
-                is_diff=is_diff,
+                replace=not is_diff,
             )
 
         # num_messages = await self.get_tag(f"num_messages_synced_{agent_id}", 0)

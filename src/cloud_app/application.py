@@ -236,7 +236,7 @@ class DooverLegacyBridgeApplication(Application):
                 # important to set and publish this before we go running the sync loop to make sure
                 # it doesn't get run more than once
                 await self.set_tag("legacy_fastmode_sync_enabled", run_fastmode)
-                await self.api.publish_message(
+                await self.api.update_aggregate(
                     self.agent_id, "tag_values", self._tag_values
                 )
 
@@ -307,21 +307,19 @@ class DooverLegacyBridgeApplication(Application):
         # do a hard sync, record the log and don't diff.
         if "output_type" in data and "output" in data:
             payload, file = parse_file(channel_name, data)
-            await self.api.publish_message(
+            await self.api.update_aggregate(
                 self.agent_id,
                 channel_name,
-                message=payload,
+                data=payload,
                 files=[file],
-                record_log=True,
-                is_diff=False,
+                replace=True,
             )
         else:
-            await self.api.publish_message(
+            await self.api.update_aggregate(
                 self.agent_id,
                 channel_name,
                 data,
-                record_log=True,
-                is_diff=False,
+                replace=True,
             )
 
     async def get_or_fetch_channel_id(self, channel_name):
