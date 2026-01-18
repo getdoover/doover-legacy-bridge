@@ -181,7 +181,6 @@ class DooverLegacyBridgeApplication(Application):
                 agent_id,
                 channel_name,
                 data=payload,
-                timestamp=ts,
                 replace=not is_diff,
             )
 

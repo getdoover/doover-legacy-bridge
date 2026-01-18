@@ -262,25 +262,29 @@
                     "title": "Legacy API Key",
                     "x-name": "legacy_api_key",
                     "x-hidden": false,
-                    "type": "string"
+                    "type": "string",
+                    "x-required": true
                 },
                 "legacy_api_url": {
                     "title": "Legacy API URL",
                     "x-name": "legacy_api_url",
                     "x-hidden": false,
-                    "type": "string"
+                    "type": "string",
+                    "x-required": true
                 },
                 "dv_proc_subscriptions": {
                     "title": "Subscription",
                     "x-name": "dv_proc_subscriptions",
                     "x-hidden": false,
                     "type": "array",
+                    "x-required": true,
                     "description": "A list of channels to subscribe to.",
                     "items": {
                         "title": "Channel Subscription",
                         "x-name": "dv_proc_subscription",
                         "x-hidden": false,
                         "type": "string",
+                        "x-required": true,
                         "description": "The name of the channel to subscribe to"
                     }
                 },
@@ -288,13 +292,18 @@
                     "title": "Agent Key",
                     "x-name": "agent_key",
                     "x-hidden": false,
-                    "type": "string"
+                    "type": "string",
+                    "x-required": true
                 },
                 "read_only": {
                     "title": "Read Only",
                     "x-name": "read_only",
                     "x-hidden": false,
-                    "type": "boolean",
+                    "type": [
+                        "boolean",
+                        "null"
+                    ],
+                    "x-required": false,
                     "description": "If this is enabled, no messages will be written back to Doover 1.0, ever.",
                     "default": false
                 }

@@ -13,6 +13,7 @@ from pydoover.cloud.processor.types import (
     ConnectionType,
     ConnectionConfig,
     ManualInvokeEvent,
+    AggregateUpdateEvent,
 )
 from pydoover.cloud.api import Client, NotFound
 from datetime import datetime, timezone, timedelta
@@ -57,24 +58,10 @@ class DooverLegacyBridgeApplication(Application):
             self._legacy_client.session.close()
 
     async def pre_hook_filter(self, event):
-        if isinstance(event, MessageCreateEvent):
-            if (
-                event.channel_name in ("ui_cmds", "tunnels")
-                and "doover_legacy_bridge_at" in event.message.diff
-            ):
-                # ignore any messages originating from doover 1.0
-                return False
-
-            if (
-                event.channel_name == "ui_state-wss_connections"
-                and "doover_legacy_bridge_at" not in event.message.diff
-            ):
-                # we only care about messages originating from doover 1.0
-                return False
-
-            if event.channel_name == "ui_state" and not (
-                get_connection_info(event.message.data.get("state", {}))
-                and "doover_legacy_bridge_at" in event.message.diff
+        if isinstance(event, AggregateUpdateEvent):
+            if event.channel.name == "ui_state" and not (
+                get_connection_info(event.aggregate.data.get("state", {}))
+                and "doover_legacy_bridge_at" in event.request_data.data
             ):
                 # if this is a processor-based application we need to reach into ui_state and fetch any connection info
                 # so we can update the connection status
@@ -82,6 +69,32 @@ class DooverLegacyBridgeApplication(Application):
                 log.info(
                     "Message was for ui_state but no connection config was defined. Skipping..."
                 )
+                return False
+
+            if event.channel.name in ("ui_state-wss_connections", "ui_cmds", "tunnels"):
+                # there's no way to differentiate between on_aggregate_update and on_message_create
+                # in config yet, so all events get sent through so we just filter the ones we only want to handle
+                # aggregate updates for (not message logs) to save duplicating logic
+                log.info("Received message log channel on aggregate update event.")
+                return False
+
+        if isinstance(event, MessageCreateEvent):
+            if (
+                event.channel_name in ("ui_cmds", "tunnels")
+                and "doover_legacy_bridge_at" in event.message.data
+            ):
+                # ignore any messages originating from doover 1.0
+                return False
+
+            if (
+                event.channel_name == "ui_state-wss_connections"
+                and "doover_legacy_bridge_at" not in event.message.data
+            ):
+                # we only care about messages originating from doover 1.0
+                return False
+
+            if event.channel_name in ("ui_state",):
+                # see above, don't double process ui_state
                 return False
 
         return True
@@ -107,8 +120,17 @@ class DooverLegacyBridgeApplication(Application):
         else:
             # doover 1.0 gets the 'last ping' from the 'last ui state publish' for non-continuous connections
             # so just mimic that here.
-            log.info("Detected ui_state message on period connection. Pinging...")
-            await self.ping_connection()
+            # formatting makes this look weird but it's basically to stop repeated unnecessary pinging
+            # ie. only ping twice every "expected interval"
+            if datetime.now(
+                timezone.utc
+            ) - self.connection_status.last_ping > timedelta(
+                seconds=self.connection_config.expected_interval / 2
+            ):
+                log.info("Detected ui_state message on period connection. Pinging...")
+                await self.ping_connection()
+            else:
+                log.info("Ignoring ping as interval is too short...")
 
         if config == self.connection_config:
             log.info("Connection config unchanged. Skipping...")
@@ -117,72 +139,27 @@ class DooverLegacyBridgeApplication(Application):
         # we could probably combine this with the ping above
         await self.api.update_connection_config(self.agent_id, config)
 
-    async def on_message_create(self, event: MessageCreateEvent):
+    async def on_aggregate_update(self, event: AggregateUpdateEvent):
         if self.config.legacy_agent_key.value == "placeholder":
             log.info("Legacy agent key not set, not running processor.")
             return
 
-        payload = event.message.data
-        log.info(f"Received new message on channel: {event.channel_name}")
+        payload = event.request_data.data
+        log.info(f"Received aggregate update on channel: {event.channel.name}")
 
-        if event.channel_name == "ui_state":
-            await self.handle_connection_config(payload)
+        if event.channel.name == "ui_state":
+            await self.handle_connection_config(event.aggregate.data)
 
-        if event.channel_name == "ui_state-wss_connections":
-            if self.connection_config and self.connection_config.connection_type is ConnectionType.periodic:
-                log.info(
-                    "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
-                )
-                return
-
-            # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
-            try:
-                online = event.message.data["connections"][
-                    self.config.legacy_agent_key.value
-                ]
-            except KeyError:
-                online = False
-
-            if online:
-                # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
-                # if a message doesn't get published to this channel at least once every few minutes.
-                status, determination = (
-                    ConnectionStatus.continuous_online_no_ping,
-                    ConnectionDetermination.online,
-                )
-            elif (
-                self.connection_config and self.connection_config.connection_type
-                is ConnectionType.periodic_continuous
-            ):
-                status, determination = (
-                    ConnectionStatus.continuous_pending,
-                    ConnectionDetermination.online,
-                )
-            else:
-                status, determination = (
-                    ConnectionStatus.continuous_offline,
-                    ConnectionDetermination.offline,
-                )
-
-            await self.api.ping_connection_at(
-                self.agent_id,
-                datetime.now(timezone.utc),
-                status,
-                determination,
-                user_agent="doover-legacy-bridge;forwarded-message",
-                organisation_id=self.organisation_id,
-            )
-
-        if event.channel_name in ("ui_cmds", "tunnels"):
+        if event.channel.name in ("ui_cmds", "tunnels"):
             log.info(
-                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.diff}"
+                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel.name}, diff: {event.aggregate.data}"
             )
 
-            if event.channel_name == "ui_cmds":
+            if event.channel.name == "ui_cmds":
                 # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
-                message: dict = {"cmds": event.message.diff}
+                message: dict = {"cmds": event.request_data.data}
             else:
-                message: dict = event.message.diff
+                message: dict = event.request_data.data
 
             message["doover_legacy_bridge2_at"] = time.time() * 1000
 
@@ -192,15 +169,11 @@ class DooverLegacyBridgeApplication(Application):
 
             self.legacy_client.publish_to_channel_name(
                 self.config.legacy_agent_key.value,
-                event.channel_name,
+                event.channel.name,
                 message,
             )
 
-        if event.channel_name == "trigger_manual_sync":
-            log.info(f"Manual sync requested. Token: {self.api.session.headers['Authorization']}")
-            await self.on_manual_invoke(ManualInvokeEvent(self.organisation_id, "{}"))
-
-        if event.channel_name == "doover_ui_fastmode":
+        if event.channel.name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
             if any(
                 datetime.fromtimestamp(v / 1000, timezone.utc) - now
@@ -240,6 +213,73 @@ class DooverLegacyBridgeApplication(Application):
                     self.agent_id, "tag_values", self._tag_values
                 )
 
+    async def on_message_create(self, event: MessageCreateEvent):
+        if self.config.legacy_agent_key.value == "placeholder":
+            log.info("Legacy agent key not set, not running processor.")
+            return
+
+        payload = event.message.data
+        log.info(f"Received new message on channel: {event.channel_name}")
+
+        if event.channel_name == "ui_state":
+            await self.handle_connection_config(payload)
+
+        if event.channel_name == "ui_state-wss_connections":
+            # these are always logged messages (for now...?)
+            if (
+                self.connection_config
+                and self.connection_config.connection_type is ConnectionType.periodic
+            ):
+                log.info(
+                    "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
+                )
+                return
+
+            # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
+            try:
+                online = event.message.data["connections"][
+                    self.config.legacy_agent_key.value
+                ]
+            except KeyError:
+                online = False
+
+            if online:
+                # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
+                # if a message doesn't get published to this channel at least once every few minutes.
+                status, determination = (
+                    ConnectionStatus.continuous_online_no_ping,
+                    ConnectionDetermination.online,
+                )
+            elif (
+                self.connection_config
+                and self.connection_config.connection_type
+                is ConnectionType.periodic_continuous
+            ):
+                status, determination = (
+                    ConnectionStatus.continuous_pending,
+                    ConnectionDetermination.online,
+                )
+            else:
+                status, determination = (
+                    ConnectionStatus.continuous_offline,
+                    ConnectionDetermination.offline,
+                )
+
+            await self.api.ping_connection_at(
+                self.agent_id,
+                datetime.now(timezone.utc),
+                status,
+                determination,
+                user_agent="doover-legacy-bridge;forwarded-message",
+                organisation_id=self.organisation_id,
+            )
+
+        if event.channel_name == "trigger_manual_sync":
+            log.info(
+                f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
+            )
+            await self.on_manual_invoke(ManualInvokeEvent(self.organisation_id, "{}"))
+
     async def on_schedule(self, event: ScheduleEvent):
         # don't do anything on a schedule, we should get 100% of the messages from doover 1.0
         # and the user can request a manual sync if they want
@@ -266,26 +306,35 @@ class DooverLegacyBridgeApplication(Application):
             log.info(f"Channel {channel_name} not found, skipping...")
             return
 
-
-        channel_name = re.sub(r'[^a-zA-Z0-9_-]', '-', channel_name)
+        channel_name = re.sub(r"[^a-zA-Z0-9_-]", "-", channel_name)
 
         data = ch.fetch_aggregate()
         if not isinstance(data, dict):
             logging.info("Discarding message since doover data will just discard it...")
             return
 
-        log.info(f"Fetched channel {channel_name} from doover 1.0, sending to doover 2.0...")
+        log.info(
+            f"Fetched channel {channel_name} from doover 1.0, sending to doover 2.0..."
+        )
 
-        await self.set_tag("num_messages_synced", (await self.get_tag("num_messages_synced", 0)) + 1)
+        await self.set_tag(
+            "num_messages_synced", (await self.get_tag("num_messages_synced", 0)) + 1
+        )
         await self.set_tag("last_manual_sync", datetime.now(timezone.utc).timestamp())
 
         if channel_name == "tag_values":
             if self.app_key not in data:
                 data[self.app_key] = {}
             # if we don't do this we'll overwrite the existing counters!
-            data[self.app_key]["last_manual_sync"] = await self.get_tag("last_manual_sync")
-            data[self.app_key]["num_messages_synced"] = await self.get_tag("num_messages_synced")
-            data[self.app_key]["last_message_dt"] = await self.get_tag("last_message_dt")
+            data[self.app_key]["last_manual_sync"] = await self.get_tag(
+                "last_manual_sync"
+            )
+            data[self.app_key]["num_messages_synced"] = await self.get_tag(
+                "num_messages_synced"
+            )
+            data[self.app_key]["last_message_dt"] = await self.get_tag(
+                "last_message_dt"
+            )
 
         if channel_name == "deployment_config":
             if "applications" not in data:
