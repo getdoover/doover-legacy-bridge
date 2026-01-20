@@ -241,9 +241,10 @@ class DooverLegacyBridgeApplication(Application):
                     self.config.legacy_agent_key.value
                 ]
             except KeyError:
-                online = False
+                log.info("Detect irrelevant ui_state-wss_connections message")
+                return
 
-            if online:
+            if online is not None:
                 # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
                 # if a message doesn't get published to this channel at least once every few minutes.
                 status, determination = (

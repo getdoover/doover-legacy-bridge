@@ -59,6 +59,7 @@
                     "x-name": "dv_proc_ingestion",
                     "x-hidden": false,
                     "type": "object",
+                    "x-required": true,
                     "description": "Ingestion Endpoint configuration",
                     "properties": {
                         "cidr_ranges": {
@@ -66,19 +67,25 @@
                             "x-name": "cidr_ranges",
                             "x-hidden": false,
                             "type": "array",
+                            "x-required": true,
                             "description": "Accepted CIDR ranges for incoming requests",
                             "items": {
                                 "title": "IP Range, e.g. 1.234.56.78/24 or 110.220.120.1/32",
                                 "x-name": "ip_range,_e.g._1.234.56.78/24_or_110.220.120.1/32",
                                 "x-hidden": false,
-                                "type": "string"
+                                "type": "string",
+                                "x-required": true
                             }
                         },
                         "signing_key": {
                             "title": "Signing Key",
                             "x-name": "signing_key",
                             "x-hidden": false,
-                            "type": "string",
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "Private SHA256 signing key for the request. While not recommended, this may be `None` if no signed hash verification is required.",
                             "default": ""
                         },
@@ -86,7 +93,11 @@
                             "title": "SHA256 Hash Header",
                             "x-name": "sha256_hash_header",
                             "x-hidden": false,
-                            "type": "string",
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "Header key for the hash of the signed payload (defaults to x-hmac-sha256 if signing_key is present)",
                             "default": "x-hmac-sha256"
                         },
@@ -94,7 +105,11 @@
                             "title": "Throttle",
                             "x-name": "throttle",
                             "x-hidden": false,
-                            "type": "integer",
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "The number of requests to allow per second. Due to internal limits, this cannot exceed 30.",
                             "default": 10,
                             "maximum": 30
@@ -103,7 +118,11 @@
                             "title": "Never Replace Token",
                             "x-name": "never_replace_token",
                             "x-hidden": false,
-                            "type": "boolean",
+                            "type": [
+                                "boolean",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "Enable this if the token is difficult to change and must never change. This is not recommended from a security standpoint, however may be necessary in some situations.If this option is disabled and then enabled, a new token will be generated at that point.",
                             "default": false
                         },
@@ -111,7 +130,11 @@
                             "title": "Mini Token",
                             "x-name": "mini_token",
                             "x-hidden": false,
-                            "type": "boolean",
+                            "type": [
+                                "boolean",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "Enable this to generate a mini token for use with the ingestion endpoint. Mini tokens are ~70 bytes, compared with the ~900 bytes of a regular token. Generally, this is not advised as it adds complexity and latency to ingestion calls, however may be desirable in especially low-bandwidth and embedded environments. There is no security difference in the two tokens.",
                             "default": false
                         }
@@ -126,6 +149,7 @@
                     "x-name": "dv_proc_extended_permissions",
                     "x-hidden": false,
                     "type": "object",
+                    "x-required": true,
                     "description": "Enable extended permissions and access to other devices.",
                     "properties": {
                         "devices": {
@@ -133,6 +157,7 @@
                             "x-name": "devices",
                             "x-hidden": false,
                             "type": "array",
+                            "x-required": true,
                             "description": "List of devices to grant extended permissions to.",
                             "items": {
                                 "title": "Device",
@@ -140,6 +165,7 @@
                                 "x-hidden": false,
                                 "format": "doover-resource-device",
                                 "type": "string",
+                                "x-required": true,
                                 "description": "Device ID",
                                 "pattern": "\\d+"
                             }
@@ -149,6 +175,7 @@
                             "x-name": "groups",
                             "x-hidden": false,
                             "type": "array",
+                            "x-required": true,
                             "description": "List of groups to grant permissions to.",
                             "items": {
                                 "title": "Group",
@@ -156,6 +183,7 @@
                                 "x-hidden": false,
                                 "format": "doover-resource-group",
                                 "type": "string",
+                                "x-required": true,
                                 "description": "Group ID",
                                 "pattern": "\\d+"
                             }
@@ -165,6 +193,7 @@
                             "x-name": "apps_installed",
                             "x-hidden": false,
                             "type": "array",
+                            "x-required": true,
                             "description": "Permission will be given to any devices which have any of the apps listed installed.",
                             "items": {
                                 "title": "Application",
@@ -172,6 +201,7 @@
                                 "x-hidden": false,
                                 "format": "doover-resource-application",
                                 "type": "string",
+                                "x-required": true,
                                 "description": "Application"
                             }
                         },
@@ -179,7 +209,11 @@
                             "title": "All Devices",
                             "x-name": "all_devices",
                             "x-hidden": false,
-                            "type": "boolean",
+                            "type": [
+                                "boolean",
+                                "null"
+                            ],
+                            "x-required": false,
                             "description": "Permission will be given for all devices in this organisation. This is a very far-reaching permission to grant!",
                             "default": false
                         }

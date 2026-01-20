@@ -1,7 +1,7 @@
 import base64
 import logging
 import mimetypes
-
+from contextlib import suppress
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +70,12 @@ def find_element(key, payload):
     except KeyError:
         pass
 
-    if "children" in payload:
-        find_element(key, payload["children"])
+    for v in payload.values():
+        if isinstance(v, dict):
+            with suppress(KeyError):
+                return find_element(key, v["children"])
 
-    raise KeyError(f"key '{key}' not found.")
+            with suppress(KeyError):
+                return find_element(key, v)
+
+    raise KeyError(f"key '{key}' not found")

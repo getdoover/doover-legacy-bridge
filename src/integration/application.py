@@ -46,7 +46,7 @@ class DooverLegacyBridgeApplication(Application):
                 formatted = "set {name} to {new}"
 
         # .format() is an option but exposes an eval security vulnerability, so just do a find replace...
-        return formatted.replace("{name}", name).replace("{new}", new_value)
+        return formatted.replace("{name}", str(name)).replace("{new}", str(new_value))
 
     async def handle_ui_cmds_update(self, agent_id: int, actor: dict[str, str], diff: dict[str, Any], ui_state):
         updates = [self.extract_update(key, value, find_element(key, ui_state)) for key, value in diff.items()]
@@ -90,13 +90,15 @@ class DooverLegacyBridgeApplication(Application):
                 pass
 
             if event.payload["agent_key"] != event.payload["author_key"]:
+                log.info(f"Got new ui_cmds action to relay...: {event.payload}")
                 # ui_cmds, the user has updated something substantial so let's see if we need to add it to activity log
-                ui_state = await self.api.get_channel(agent_id, "ui_state")
+                aggregate = await self.api.get_channel_aggregate(agent_id, "ui_state")
                 actor = {
-                    "name": payload["author_name"],
-                    "legacy_agent_key": payload["author_key"],
+                    "name": event.payload["author_name"],
+                    "legacy_agent_key": event.payload["author_key"],
                 }
-                await self.handle_ui_cmds_update(agent_id, actor, payload, ui_state.aggregate.data)
+                log.info(f"Setting ui_cmds update for actor: {actor}")
+                await self.handle_ui_cmds_update(agent_id, actor, payload, aggregate.data)
 
         if channel_name == "ui_state":
             try:
