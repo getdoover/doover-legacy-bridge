@@ -6,7 +6,12 @@ from typing import Any
 
 from pydoover.cloud.processor import Application, IngestionEndpointEvent
 
-from legacy_bridge_common.utils import parse_file, nested_find_replace, find_element
+from legacy_bridge_common.utils import (
+    parse_file,
+    nested_find_replace,
+    find_element,
+    replace_units_add_requires_confirm,
+)
 
 log = logging.getLogger()
 
@@ -112,6 +117,8 @@ class DooverLegacyBridgeApplication(Application):
                     "https://getdoover.github.io/cameras/HLSLiveView.js",
                     "https://getdoover.github.io/cameras/LiveViewV2.js",
                 )
+
+            payload = replace_units_add_requires_confirm(payload)
             # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
 
         if channel_name == "activity_logs":

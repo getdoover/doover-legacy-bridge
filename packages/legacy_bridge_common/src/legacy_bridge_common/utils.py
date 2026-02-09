@@ -79,3 +79,25 @@ def find_element(key, payload):
                 return find_element(key, v)
 
     raise KeyError(f"key '{key}' not found")
+
+
+def replace_units_add_requires_confirm(payload):
+    if isinstance(payload, dict):
+        # Check if this dict has a displayString with units
+        if "displayString" in payload:
+            name = payload["displayString"]
+            if "(" in name and ")" in name:
+                new, units = name.split("(", 1)  # Split only on first (
+                payload["displayString"] = new.strip()
+                payload["units"] = units.strip().rstrip(")")
+
+        if "type" in payload and "requiresConfirm" not in payload:
+            if payload["type"] in ("uiStateCommand", "uiSlider", "uiInteraction"):
+                payload["requiresConfirm"] = True
+
+        # Recurse through all values in this dict
+        for key, value in payload.items():
+            if isinstance(value, dict):
+                replace_units_add_requires_confirm(value)
+
+    return payload

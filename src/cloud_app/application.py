@@ -53,6 +53,11 @@ class DooverLegacyBridgeApplication(Application):
         if num_imported_messages is None:
             await self.set_tag("imported_messages", 0)
 
+        if isinstance(self._payload, MessageCreateEvent) and self._payload.channel_name == "trigger_manual_sync":
+            log.info(
+                f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
+            )
+
     async def close(self):
         if self._legacy_client:
             self._legacy_client.session.close()
