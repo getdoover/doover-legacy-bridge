@@ -18,7 +18,11 @@ from pydoover.cloud.processor.types import (
 from pydoover.cloud.api import Client, NotFound
 from datetime import datetime, timezone, timedelta
 
-from legacy_bridge_common.utils import get_connection_info, parse_file
+from legacy_bridge_common.utils import (
+    get_connection_info,
+    parse_file,
+    replace_units_add_requires_confirm,
+)
 from .app_config import DooverLegacyBridgeConfig
 
 log = logging.getLogger()
@@ -351,6 +355,7 @@ class DooverLegacyBridgeApplication(Application):
         if channel_name == "ui_state":
             # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
             await self.handle_connection_config(data)
+            data = replace_units_add_requires_confirm(data)
 
         if channel_name == "ui_cmds":
             try:
