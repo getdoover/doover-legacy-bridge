@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from typing import Any
 
 from pydoover.cloud.processor import (
     Application,
@@ -57,7 +58,10 @@ class DooverLegacyBridgeApplication(Application):
         if num_imported_messages is None:
             await self.set_tag("imported_messages", 0)
 
-        if isinstance(self._payload, MessageCreateEvent) and self._payload.channel_name == "trigger_manual_sync":
+        if (
+            isinstance(self._payload, MessageCreateEvent)
+            and self._payload.channel_name == "trigger_manual_sync"
+        ):
             log.info(
                 f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
             )
@@ -148,6 +152,55 @@ class DooverLegacyBridgeApplication(Application):
         # we could probably combine this with the ping above
         await self.api.update_connection_config(self.agent_id, config)
 
+    async def handle_wss_connections(self, payload: dict[str, Any]):
+        # these are always logged messages (for now...?)
+        if (
+            self.connection_config
+            and self.connection_config.connection_type is ConnectionType.periodic
+        ):
+            log.info(
+                "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
+            )
+            return
+
+        # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
+        try:
+            online = payload["connections"][self.config.legacy_agent_key.value]
+        except KeyError:
+            log.info("Detect irrelevant ui_state-wss_connections message")
+            return
+
+        if online is not None:
+            # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
+            # if a message doesn't get published to this channel at least once every few minutes.
+            status, determination = (
+                ConnectionStatus.continuous_online_no_ping,
+                ConnectionDetermination.online,
+            )
+        elif (
+            self.connection_config
+            and self.connection_config.connection_type
+            is ConnectionType.periodic_continuous
+        ):
+            status, determination = (
+                ConnectionStatus.continuous_pending,
+                ConnectionDetermination.online,
+            )
+        else:
+            status, determination = (
+                ConnectionStatus.continuous_offline,
+                ConnectionDetermination.offline,
+            )
+
+        await self.api.ping_connection_at(
+            self.agent_id,
+            datetime.now(timezone.utc),
+            status,
+            determination,
+            user_agent="doover-legacy-bridge;forwarded-message",
+            organisation_id=self.organisation_id,
+        )
+
     async def on_aggregate_update(self, event: AggregateUpdateEvent):
         if self.config.legacy_agent_key.value == "placeholder":
             log.info("Legacy agent key not set, not running processor.")
@@ -234,55 +287,7 @@ class DooverLegacyBridgeApplication(Application):
             await self.handle_connection_config(payload)
 
         if event.channel_name == "ui_state-wss_connections":
-            # these are always logged messages (for now...?)
-            if (
-                self.connection_config
-                and self.connection_config.connection_type is ConnectionType.periodic
-            ):
-                log.info(
-                    "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
-                )
-                return
-
-            # there's no amazing way to do this, so just do it how doover 1.0 does it - sync based on wss_conn channel
-            try:
-                online = event.message.data["connections"][
-                    self.config.legacy_agent_key.value
-                ]
-            except KeyError:
-                log.info("Detect irrelevant ui_state-wss_connections message")
-                return
-
-            if online is not None:
-                # we need to do no ping because otherwise doover 2.0 will mark the connection as offline
-                # if a message doesn't get published to this channel at least once every few minutes.
-                status, determination = (
-                    ConnectionStatus.continuous_online_no_ping,
-                    ConnectionDetermination.online,
-                )
-            elif (
-                self.connection_config
-                and self.connection_config.connection_type
-                is ConnectionType.periodic_continuous
-            ):
-                status, determination = (
-                    ConnectionStatus.continuous_pending,
-                    ConnectionDetermination.online,
-                )
-            else:
-                status, determination = (
-                    ConnectionStatus.continuous_offline,
-                    ConnectionDetermination.offline,
-                )
-
-            await self.api.ping_connection_at(
-                self.agent_id,
-                datetime.now(timezone.utc),
-                status,
-                determination,
-                user_agent="doover-legacy-bridge;forwarded-message",
-                organisation_id=self.organisation_id,
-            )
+            await self.handle_wss_connections(event.message.data)
 
         if event.channel_name == "trigger_manual_sync":
             log.info(
@@ -356,6 +361,9 @@ class DooverLegacyBridgeApplication(Application):
             # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
             await self.handle_connection_config(data)
             data = replace_units_add_requires_confirm(data)
+
+        if channel_name == "ui_state-wss_connections":
+            await self.handle_wss_connections(data)
 
         if channel_name == "ui_cmds":
             try:
