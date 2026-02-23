@@ -100,6 +100,19 @@ def replace_units_add_requires_confirm(payload):
             if isinstance(value, dict):
                 replace_units_add_requires_confirm(value)
 
+        if payload.get("type") == "uiCamera":
+            cam_name = payload.get("name") or "camera"
+            payload["type"] = "uiSubmodule"
+            payload["icon"] = "camera"
+            payload["children"] = {
+                cam_name: {
+                    "type": "uiCameraHistory",
+                    "cameraName": cam_name,
+                    "displayName": payload.get("displayName"),
+                    "name": cam_name,
+                }
+            }
+
     return payload
 
 
