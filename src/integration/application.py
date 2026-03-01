@@ -117,6 +117,13 @@ class DooverLegacyBridgeApplication(Application):
                     "https://getdoover.github.io/cameras/HLSLiveView.js",
                     "https://getdoover.github.io/cameras/LiveViewV2.js",
                 )
+                
+                nested_find_replace(
+                    state,
+                    "componentUrl",
+                    "https://spaneng.github.io/fuel-additive-reconciliation/ReconciliationComponent.js",
+                    "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
+                )
 
             payload = replace_units_add_requires_confirm(payload)
             # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
