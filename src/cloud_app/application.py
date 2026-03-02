@@ -213,28 +213,6 @@ class DooverLegacyBridgeApplication(Application):
         if event.channel.name == "ui_state":
             await self.handle_connection_config(event.aggregate.data)
 
-        if event.channel.name in ("ui_cmds", "tunnels"):
-            log.info(
-                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel.name}, diff: {event.aggregate.data}"
-            )
-
-            if event.channel.name == "ui_cmds":
-                # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
-                message: dict = {"cmds": event.request_data.data}
-            else:
-                message: dict = event.request_data.data
-
-            message["doover_legacy_bridge2_at"] = time.time() * 1000
-
-            if self.config.read_only.value:
-                log.info("Read only mode enabled, not writing message to Doover 1.0.")
-                return
-
-            self.legacy_client.publish_to_channel_name(
-                self.config.legacy_agent_key.value,
-                event.channel.name,
-                message,
-            )
 
         if event.channel.name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
@@ -283,6 +261,29 @@ class DooverLegacyBridgeApplication(Application):
 
         payload = event.message.data
         log.info(f"Received new message on channel: {event.channel_name}")
+        
+        if event.channel_name in ("ui_cmds", "tunnels"):
+            log.info(
+                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.data}"
+            )
+
+            if event.channel_name == "ui_cmds":
+                # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
+                message: dict = {"cmds": event.message.data}
+            else:
+                message: dict = event.message.data
+
+            message["doover_legacy_bridge2_at"] = time.time() * 1000
+
+            if self.config.read_only.value:
+                log.info("Read only mode enabled, not writing message to Doover 1.0.")
+                return
+
+            self.legacy_client.publish_to_channel_name(
+                self.config.legacy_agent_key.value,
+                event.channel_name,
+                message,
+            )
 
         if event.channel_name == "ui_state":
             await self.handle_connection_config(payload)
