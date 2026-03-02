@@ -60,7 +60,10 @@ def nested_find_replace(payload, key, old, new):
             payload[key] = new
 
     if "children" in payload:
-        nested_find_replace(payload["children"], key, old, new)
+        for child in payload["children"].values():
+            if isinstance(child, dict):
+                nested_find_replace(child, key, old, new)
+        # nested_find_replace(payload["children"], key, old, new)
 
     return payload
 
