@@ -23,6 +23,7 @@ from legacy_bridge_common.utils import (
     get_connection_info,
     parse_file,
     replace_units_add_requires_confirm,
+    replace_widget_urls
 )
 from .app_config import DooverLegacyBridgeConfig
 
@@ -361,6 +362,7 @@ class DooverLegacyBridgeApplication(Application):
             # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
             await self.handle_connection_config(data)
             data = replace_units_add_requires_confirm(data)
+            replace_widget_urls(data["state"])
 
         if channel_name == "ui_state-wss_connections":
             await self.handle_wss_connections(data)

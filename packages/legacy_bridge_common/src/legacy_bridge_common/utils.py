@@ -67,6 +67,21 @@ def nested_find_replace(payload, key, old, new):
 
     return payload
 
+def replace_widget_urls(state):
+    nested_find_replace(
+        state,
+        "componentUrl",
+        "https://getdoover.github.io/cameras/HLSLiveView.js",
+        "https://getdoover.github.io/cameras/LiveViewV2.js",
+    )
+
+    nested_find_replace(
+        state,
+        "componentUrl",
+        "https://spaneng.github.io/fuel-additive-reconciliation/ReconciliationComponent.js",
+        "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
+    )
+
 def find_element(key, payload):
     try:
         return payload[key]

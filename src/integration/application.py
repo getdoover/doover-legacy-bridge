@@ -8,9 +8,9 @@ from pydoover.cloud.processor import Application, IngestionEndpointEvent
 
 from legacy_bridge_common.utils import (
     parse_file,
-    nested_find_replace,
     find_element,
     replace_units_add_requires_confirm,
+    replace_widget_urls
 )
 
 log = logging.getLogger()
@@ -111,19 +111,7 @@ class DooverLegacyBridgeApplication(Application):
             except KeyError:
                 pass
             else:
-                nested_find_replace(
-                    state,
-                    "componentUrl",
-                    "https://getdoover.github.io/cameras/HLSLiveView.js",
-                    "https://getdoover.github.io/cameras/LiveViewV2.js",
-                )
-                
-                nested_find_replace(
-                    state,
-                    "componentUrl",
-                    "https://spaneng.github.io/fuel-additive-reconciliation/ReconciliationComponent.js",
-                    "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
-                )
+                replace_widget_urls(state)
 
             payload = replace_units_add_requires_confirm(payload)
             # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
