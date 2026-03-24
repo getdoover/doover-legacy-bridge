@@ -33,7 +33,7 @@ dev = [
 
 [tool.uv.sources]
 legacy-bridge-common = { workspace = true }
-pydoover = { git = "https://github.com/getdoover/pydoover", branch = "doover-2" }
+pydoover = { path = "../pydoover" }
 
 [tool.uv.workspace]
 members = [ "packages/*" ]

@@ -3,11 +3,9 @@ import re
 import time
 from typing import Any
 
-from pydoover.cloud.processor import (
-    Application,
+from pydoover.processor import Application
+from pydoover.models import (
     MessageCreateEvent,
-)
-from pydoover.cloud.processor.types import (
     ConnectionStatus,
     ConnectionDetermination,
     ScheduleEvent,
@@ -15,15 +13,16 @@ from pydoover.cloud.processor.types import (
     ConnectionConfig,
     ManualInvokeEvent,
     AggregateUpdateEvent,
+    NotFoundError,
 )
-from pydoover.cloud.api import Client, NotFound
+from pydoover.api.data import AsyncDataClient
 from datetime import datetime, timezone, timedelta
 
 from legacy_bridge_common.utils import (
     get_connection_info,
     parse_file,
     replace_units_add_requires_confirm,
-    replace_widget_urls
+    replace_widget_urls,
 )
 from .app_config import DooverLegacyBridgeConfig
 
@@ -36,11 +35,12 @@ UI_FASTMODE_AGENT_KEY = "df4108e0-7bef-459c-8b58-5c26360517e7"
 
 class DooverLegacyBridgeApplication(Application):
     config: DooverLegacyBridgeConfig
+    config_cls = DooverLegacyBridgeConfig
 
     @property
     def legacy_client(self):
         if self._legacy_client is None:
-            self._legacy_client = Client(
+            self._legacy_client = AsyncDataClient(
                 token=self.config.legacy_api_key.value,
                 base_url=self.config.legacy_api_url.value,
             )
@@ -61,7 +61,7 @@ class DooverLegacyBridgeApplication(Application):
 
         if (
             isinstance(self._payload, MessageCreateEvent)
-            and self._payload.channel_name == "trigger_manual_sync"
+            and self._payload.channel.name == "trigger_manual_sync"
         ):
             log.info(
                 f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
@@ -94,20 +94,20 @@ class DooverLegacyBridgeApplication(Application):
 
         if isinstance(event, MessageCreateEvent):
             if (
-                event.channel_name in ("ui_cmds", "tunnels")
+                event.channel.name in ("ui_cmds", "tunnels")
                 and "doover_legacy_bridge_at" in event.message.data
             ):
                 # ignore any messages originating from doover 1.0
                 return False
 
             if (
-                event.channel_name == "ui_state-wss_connections"
+                event.channel.name == "ui_state-wss_connections"
                 and "doover_legacy_bridge_at" not in event.message.data
             ):
                 # we only care about messages originating from doover 1.0
                 return False
 
-            if event.channel_name in ("ui_state",):
+            if event.channel.name in ("ui_state",):
                 # see above, don't double process ui_state
                 return False
 
@@ -213,7 +213,6 @@ class DooverLegacyBridgeApplication(Application):
         if event.channel.name == "ui_state":
             await self.handle_connection_config(event.aggregate.data)
 
-
         if event.channel.name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
             if any(
@@ -250,9 +249,7 @@ class DooverLegacyBridgeApplication(Application):
                 # important to set and publish this before we go running the sync loop to make sure
                 # it doesn't get run more than once
                 await self.set_tag("legacy_fastmode_sync_enabled", run_fastmode)
-                await self.api.update_aggregate(
-                    self.agent_id, "tag_values", self._tag_values
-                )
+                await self.tag_manager.commit_tags()
 
     async def on_message_create(self, event: MessageCreateEvent):
         if self.config.legacy_agent_key.value == "placeholder":
@@ -260,14 +257,14 @@ class DooverLegacyBridgeApplication(Application):
             return
 
         payload = event.message.data
-        log.info(f"Received new message on channel: {event.channel_name}")
-        
-        if event.channel_name in ("ui_cmds", "tunnels"):
+        log.info(f"Received new message on channel: {event.channel.name}")
+
+        if event.channel.name in ("ui_cmds", "tunnels"):
             log.info(
-                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.data}"
+                f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel.name}, diff: {event.message.data}"
             )
 
-            if event.channel_name == "ui_cmds":
+            if event.channel.name == "ui_cmds":
                 # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
                 message: dict = {"cmds": event.message.data}
             else:
@@ -281,21 +278,21 @@ class DooverLegacyBridgeApplication(Application):
 
             self.legacy_client.publish_to_channel_name(
                 self.config.legacy_agent_key.value,
-                event.channel_name,
+                event.channel.name,
                 message,
             )
 
-        if event.channel_name == "ui_state":
+        if event.channel.name == "ui_state":
             await self.handle_connection_config(payload)
 
-        if event.channel_name == "ui_state-wss_connections":
+        if event.channel.name == "ui_state-wss_connections":
             await self.handle_wss_connections(event.message.data)
 
-        if event.channel_name == "trigger_manual_sync":
+        if event.channel.name == "trigger_manual_sync":
             log.info(
                 f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
             )
-            await self.on_manual_invoke(ManualInvokeEvent(self.organisation_id, "{}"))
+            await self.on_manual_invoke(ManualInvokeEvent(self.organisation_id, {}))
 
     async def on_schedule(self, event: ScheduleEvent):
         # don't do anything on a schedule, we should get 100% of the messages from doover 1.0
@@ -307,7 +304,7 @@ class DooverLegacyBridgeApplication(Application):
             agent = self.legacy_client.client.get_agent(
                 self.config.legacy_agent_key.value
             )
-        except NotFound:
+        except NotFoundError:
             log.info("Legacy agent not found, skipping...")
             return
 
@@ -319,7 +316,7 @@ class DooverLegacyBridgeApplication(Application):
             ch = self.legacy_client.client.get_channel_named(
                 channel_name, self.config.legacy_agent_key.value
             )
-        except NotFound:
+        except NotFoundError:
             log.info(f"Channel {channel_name} not found, skipping...")
             return
 

@@ -1,28 +1,23 @@
 from pathlib import Path
 
 from pydoover import config
-from pydoover.cloud.processor import ManySubscriptionConfig
+from pydoover.processor import ManySubscriptionConfig
 
 from legacy_bridge_common import DooverLegacyBridgeCommonConfig
 
 
 class DooverLegacyBridgeConfig(DooverLegacyBridgeCommonConfig):
-    def __init__(self):
-        super().__init__()
-        # we don't really need this inheritance, I just wanted to showcase how to use uv workspaces / multiple apps
-        # in one repo.
-        self.subscription = ManySubscriptionConfig()
+    subscription = ManySubscriptionConfig()
 
-        self.legacy_agent_key = config.String("Agent Key")
-        self.read_only = config.Boolean(
-            "Read Only",
-            description="If this is enabled, no messages will be written back to Doover 1.0, ever.",
-            default=False,
-        )
-
+    legacy_agent_key = config.String("Agent Key")
+    read_only = config.Boolean(
+        "Read Only",
+        description="If this is enabled, no messages will be written back to Doover 1.0, ever.",
+        default=False,
+    )
 
 def export():
-    DooverLegacyBridgeConfig().export(
+    DooverLegacyBridgeConfig.export(
         Path(__file__).parents[2] / "doover_config.json",
         "doover_legacy_bridge_cloud_app",
     )

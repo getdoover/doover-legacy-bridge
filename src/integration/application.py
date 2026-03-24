@@ -4,7 +4,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from pydoover.cloud.processor import Application, IngestionEndpointEvent
+from pydoover.processor import Application
+from pydoover.models import IngestionEndpointEvent
 
 from legacy_bridge_common.utils import (
     parse_file,
@@ -13,10 +14,15 @@ from legacy_bridge_common.utils import (
     replace_widget_urls
 )
 
+from .app_config import DooverLegacyBridgeConfig
+
 log = logging.getLogger()
 
 
 class DooverLegacyBridgeApplication(Application):
+    config: DooverLegacyBridgeConfig
+    config_cls = DooverLegacyBridgeConfig
+
     async def setup(self):
         self._record_tag_update = False
 
