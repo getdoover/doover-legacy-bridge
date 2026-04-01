@@ -136,10 +136,13 @@ class DooverLegacyBridgeApplication(Application):
             # so just mimic that here.
             # formatting makes this look weird but it's basically to stop repeated unnecessary pinging
             # ie. only ping twice every "expected interval"
-            if datetime.now(
-                timezone.utc
-            ) - self.connection_status.last_ping > timedelta(
-                seconds=self.connection_config.expected_interval / 2
+            if (
+                self.connection_config.expected_interval is None
+                or self.connection_status.last_ping is None
+                or (
+                    datetime.now(timezone.utc) - self.connection_status.last_ping
+                    > timedelta(seconds=self.connection_config.expected_interval / 2)
+                )
             ):
                 log.info("Detected ui_state message on period connection. Pinging...")
                 await self.ping_connection()
