@@ -60,8 +60,8 @@ class DooverLegacyBridgeApplication(Application):
             await self.set_tag("imported_messages", 0)
 
         if (
-            isinstance(self._payload, MessageCreateEvent)
-            and self._payload.channel_name == "trigger_manual_sync"
+                isinstance(self._payload, MessageCreateEvent)
+                and self._payload.channel_name == "trigger_manual_sync"
         ):
             log.info(
                 f"Manual sync requested. Token: {self.api.session.headers['Authorization']}"
@@ -74,8 +74,8 @@ class DooverLegacyBridgeApplication(Application):
     async def pre_hook_filter(self, event):
         if isinstance(event, AggregateUpdateEvent):
             if event.channel.name == "ui_state" and not (
-                get_connection_info(event.aggregate.data.get("state", {}))
-                and "doover_legacy_bridge_at" in event.request_data.data
+                    get_connection_info(event.aggregate.data.get("state", {}))
+                    and "doover_legacy_bridge_at" in event.request_data.data
             ):
                 # if this is a processor-based application we need to reach into ui_state and fetch any connection info
                 # so we can update the connection status
@@ -94,15 +94,15 @@ class DooverLegacyBridgeApplication(Application):
 
         if isinstance(event, MessageCreateEvent):
             if (
-                event.channel_name in ("ui_cmds", "tunnels")
-                and "doover_legacy_bridge_at" in event.message.data
+                    event.channel_name in ("ui_cmds", "tunnels")
+                    and "doover_legacy_bridge_at" in event.message.data
             ):
                 # ignore any messages originating from doover 1.0
                 return False
 
             if (
-                event.channel_name == "ui_state-wss_connections"
-                and "doover_legacy_bridge_at" not in event.message.data
+                    event.channel_name == "ui_state-wss_connections"
+                    and "doover_legacy_bridge_at" not in event.message.data
             ):
                 # we only care about messages originating from doover 1.0
                 return False
@@ -137,12 +137,12 @@ class DooverLegacyBridgeApplication(Application):
             # formatting makes this look weird but it's basically to stop repeated unnecessary pinging
             # ie. only ping twice every "expected interval"
             if (
-                self.connection_config.expected_interval is None
-                or self.connection_status.last_ping is None
-                or (
+                    self.connection_config.expected_interval is None
+                    or self.connection_status.last_ping is None
+                    or (
                     datetime.now(timezone.utc) - self.connection_status.last_ping
                     > timedelta(seconds=self.connection_config.expected_interval / 2)
-                )
+            )
             ):
                 log.info("Detected ui_state message on period connection. Pinging...")
                 await self.ping_connection()
@@ -159,8 +159,8 @@ class DooverLegacyBridgeApplication(Application):
     async def handle_wss_connections(self, payload: dict[str, Any]):
         # these are always logged messages (for now...?)
         if (
-            self.connection_config
-            and self.connection_config.connection_type is ConnectionType.periodic
+                self.connection_config
+                and self.connection_config.connection_type is ConnectionType.periodic
         ):
             log.info(
                 "Detected ui_state-wss_connections message on period connection. Reverting to continuous..."
@@ -182,9 +182,9 @@ class DooverLegacyBridgeApplication(Application):
                 ConnectionDetermination.online,
             )
         elif (
-            self.connection_config
-            and self.connection_config.connection_type
-            is ConnectionType.periodic_continuous
+                self.connection_config
+                and self.connection_config.connection_type
+                is ConnectionType.periodic_continuous
         ):
             status, determination = (
                 ConnectionStatus.continuous_pending,
@@ -216,13 +216,13 @@ class DooverLegacyBridgeApplication(Application):
         if event.channel.name == "ui_state":
             await self.handle_connection_config(event.aggregate.data)
 
-
         if event.channel.name == "doover_ui_fastmode":
             now = datetime.now(timezone.utc)
             if any(
-                datetime.fromtimestamp(v / 1000, timezone.utc) - now
-                < timedelta(minutes=2)
-                for v in payload.values()
+                    v is not None and
+                    datetime.fromtimestamp(v / 1000, timezone.utc) - now
+                    < timedelta(minutes=2)
+                    for v in payload.values()
             ):
                 # set user as connected to ui_state@wss_connections and ui_cmds@wss_connections
                 data = {"connections": {UI_FASTMODE_AGENT_KEY: True}}
@@ -264,7 +264,7 @@ class DooverLegacyBridgeApplication(Application):
 
         payload = event.message.data
         log.info(f"Received new message on channel: {event.channel_name}")
-        
+
         if event.channel_name in ("ui_cmds", "tunnels"):
             log.info(
                 f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.data}"
