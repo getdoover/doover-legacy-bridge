@@ -136,11 +136,17 @@ class DooverLegacyBridgeApplication(Application):
             # so just mimic that here.
             # formatting makes this look weird but it's basically to stop repeated unnecessary pinging
             # ie. only ping twice every "expected interval"
+            # pydoover sets connection_config to None when the upgrade payload carries no
+            # connection_data (fresh device, org processor); connection_status is only
+            # set on the populated branch, so guard with getattr.
+            status = getattr(self, "connection_status", None)
             if (
-                    self.connection_config.expected_interval is None
-                    or self.connection_status.last_ping is None
+                    self.connection_config is None
+                    or status is None
+                    or self.connection_config.expected_interval is None
+                    or status.last_ping is None
                     or (
-                    datetime.now(timezone.utc) - self.connection_status.last_ping
+                    datetime.now(timezone.utc) - status.last_ping
                     > timedelta(seconds=self.connection_config.expected_interval / 2)
             )
             ):

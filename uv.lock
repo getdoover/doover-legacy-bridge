@@ -255,7 +255,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "legacy-bridge-common", editable = "packages/legacy_bridge_common" },
-    { name = "pydoover", git = "https://github.com/getdoover/pydoover?branch=doover-2" },
+    { name = "pydoover", git = "https://github.com/getdoover/pydoover?branch=legacy-bridge-pin" },
     { name = "transitions", specifier = ">=0.9.2" },
 ]
 
@@ -714,7 +714,7 @@ wheels = [
 [[package]]
 name = "pydoover"
 version = "0.4.16"
-source = { git = "https://github.com/getdoover/pydoover?branch=doover-2#a630f0e86167cebf48a07b3983ffe3e4069f626f" }
+source = { git = "https://github.com/getdoover/pydoover?branch=legacy-bridge-pin#8217ab9168e0b1dfc43fe3a2d207f12c54a42104" }
 dependencies = [
     { name = "aiohttp" },
     { name = "requests" },

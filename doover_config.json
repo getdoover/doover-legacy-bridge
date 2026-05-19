@@ -13,6 +13,7 @@
         "container_registry_profile_id": 93955828574386692,
         "build_args": "--platform linux/amd64,linux/arm64",
         "export_config_command": "export-config_integration",
+        "export_ui_command": "NO_EXPORT",
         "run_command": null,
         "required_permissions": "4294967294",
         "staging_config": {
@@ -252,6 +253,7 @@
         "container_registry_profile_id": 93955828574386692,
         "build_args": "--platform linux/amd64,linux/arm64",
         "export_config_command": "export-config_cloud_app",
+        "export_ui_command": "NO_EXPORT",
         "run_command": null,
         "staging_config": {
             "owner_org_id": null,
