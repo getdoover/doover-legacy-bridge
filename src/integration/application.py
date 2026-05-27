@@ -9,6 +9,7 @@ from pydoover.cloud.processor import Application, IngestionEndpointEvent
 from legacy_bridge_common.utils import (
     parse_file,
     find_element,
+    normalize_reported_desired,
     replace_units_add_requires_confirm,
     replace_widget_urls
 )
@@ -106,6 +107,7 @@ class DooverLegacyBridgeApplication(Application):
                 await self.handle_ui_cmds_update(agent_id, actor, payload, aggregate.data)
 
         if channel_name == "ui_state":
+            desired = normalize_reported_desired(payload)
             try:
                 state = payload["state"]
             except KeyError:
@@ -114,6 +116,13 @@ class DooverLegacyBridgeApplication(Application):
                 replace_widget_urls(state)
 
             payload = replace_units_add_requires_confirm(payload)
+
+            if desired is not None:
+                desired["doover_legacy_bridge_at"] = time.time() * 1000
+                await self.api.update_aggregate(
+                    agent_id, "ui_cmds", data=desired,
+                    replace=not event.payload["is_diff"],
+                )
             # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
 
         if channel_name == "activity_logs":

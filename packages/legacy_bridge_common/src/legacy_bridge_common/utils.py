@@ -82,6 +82,24 @@ def replace_widget_urls(state):
         "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
     )
 
+
+def normalize_reported_desired(payload: dict) -> dict | None:
+    """Flatten reported/desired ui_state into the children format 2.0 expects.
+
+    If state has a ``reported`` key, its children are promoted to ``state.children``
+    and the ``desired`` dict (the 1.0 equivalent of ui_cmds) is returned so the
+    caller can sync it separately.  Returns ``None`` when the payload is already
+    in the flat format.
+    """
+    state = payload.get("state")
+    if not isinstance(state, dict) or "reported" not in state:
+        return None
+
+    reported = state.pop("reported")
+    desired = state.pop("desired", None)
+    state["children"] = reported.get("children", {})
+    return desired
+
 def find_element(key, payload):
     try:
         return payload[key]
@@ -112,6 +130,11 @@ def replace_units_add_requires_confirm(payload):
         if "type" in payload and "requiresConfirm" not in payload:
             if payload["type"] in ("uiStateCommand", "uiSlider", "uiInteraction"):
                 payload["requiresConfirm"] = True
+
+        if "ranges" in payload and isinstance(payload["ranges"], list):
+            for r in payload["ranges"]:
+                if isinstance(r, dict) and "showOnGraph" in r:
+                    r["show_on_graph"] = r.pop("showOnGraph")
 
         # Recurse through all values in this dict
         for key, value in payload.items():

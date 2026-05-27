@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 
 from legacy_bridge_common.utils import (
     get_connection_info,
+    normalize_reported_desired,
     parse_file,
     replace_units_add_requires_confirm,
     replace_widget_urls
@@ -369,10 +370,16 @@ class DooverLegacyBridgeApplication(Application):
             data["applications"][self.app_key] = self.received_deployment_config
 
         if channel_name == "ui_state":
+            desired = normalize_reported_desired(data)
             # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
             await self.handle_connection_config(data)
             data = replace_units_add_requires_confirm(data)
             replace_widget_urls(data["state"])
+
+            if desired is not None:
+                await self.api.update_aggregate(
+                    self.agent_id, "ui_cmds", data=desired, replace=True
+                )
 
         if channel_name == "ui_state-wss_connections":
             await self.handle_wss_connections(data)
