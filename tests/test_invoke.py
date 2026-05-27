@@ -1,3 +1,5 @@
+"""Basic invocation test for the cloud app handler."""
+
 import json
 import os
 
@@ -8,7 +10,7 @@ os.environ.update(
     }
 )
 
-from doover_legacy_bridge import handler
+from cloud_app import handler
 
 payload = {
     "token": "",
