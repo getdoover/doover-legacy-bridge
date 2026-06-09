@@ -67,6 +67,67 @@ def nested_find_replace(payload, key, old, new):
 
     return payload
 
+
+def nested_apply_to_component(payload, match_url, updates):
+    """Recursively walk the widget tree and merge ``updates`` into every element
+    whose ``componentUrl`` equals ``match_url``.
+
+    Unlike ``nested_find_replace`` (which only swaps a single string value), this
+    can also add *sibling* keys such as ``scope`` and ``module``. Those are
+    required when a remote component is served from a Doover 2.0 channel instead
+    of a static GitHub Pages URL: in channel mode the frontend would otherwise
+    derive the Module Federation scope/module from the channel name, which does
+    not match the widget's actual container name.
+    """
+    if not isinstance(payload, dict):
+        return payload
+
+    if payload.get("componentUrl") == match_url:
+        payload.update(updates)
+
+    children = payload.get("children")
+    if isinstance(children, dict):
+        for child in children.values():
+            nested_apply_to_component(child, match_url, updates)
+
+    return payload
+
+
+# Channel-hosted widget definitions for the Zamil fuel-additive skids. The
+# bundles are published to per-agent Doover channels via `doover channel
+# publish-file` (channels: fuel_additive_widget, fuel_additive_hmi). Here the
+# componentUrl is the *channel name* (no scheme), and scope/module pin the
+# Module Federation container that lives inside each bundle.
+_FUEL_ADDITIVE_WIDGET = {
+    "componentUrl": "fuel_additive_widget",
+    "scope": "FuelAdditiveWidget",
+    "module": "./FuelAdditiveWidget",
+}
+_FUEL_ADDITIVE_HMI = {
+    "componentUrl": "fuel_additive_hmi",
+    "scope": "HMIComponent",
+    "module": "./HMIComponent",
+}
+
+# Source componentUrl values that should resolve to FuelAdditiveWidget. Covers
+# the original 1.0 reconciliation URL, the previously-swapped GitHub Pages widget
+# URL, and the bare channel names a skid may already report. Matching all of them
+# makes the mapping correct regardless of what the device sends and idempotent
+# across re-syncs.
+_FUEL_ADDITIVE_WIDGET_SOURCES = (
+    "https://spaneng.github.io/fuel-additive-reconciliation/ReconciliationComponent.js",
+    "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
+    "fuel_additive_reconciliation",
+    "fuel_additive_widget",
+)
+
+# Source componentUrl values that should resolve to the HMI widget.
+_FUEL_ADDITIVE_HMI_SOURCES = (
+    "https://spaneng.github.io/fuel-additive-hmi/HMIComponent.js",
+    "fuel_additive_hmi",
+)
+
+
 def replace_widget_urls(state):
     nested_find_replace(
         state,
@@ -75,12 +136,22 @@ def replace_widget_urls(state):
         "https://getdoover.github.io/cameras/LiveViewV2.js",
     )
 
-    nested_find_replace(
-        state,
-        "componentUrl",
-        "https://spaneng.github.io/fuel-additive-reconciliation/ReconciliationComponent.js",
-        "https://spaneng.github.io/fuel-additive-widget/FuelAdditiveWidget.js",
-    )
+    # Reconciliation / fuel-additive dashboard -> FuelAdditiveWidget on a channel.
+    for src in _FUEL_ADDITIVE_WIDGET_SOURCES:
+        nested_apply_to_component(state, src, _FUEL_ADDITIVE_WIDGET)
+
+    # HMI -> served from the fuel_additive_hmi channel.
+    for src in _FUEL_ADDITIVE_HMI_SOURCES:
+        nested_apply_to_component(state, src, _FUEL_ADDITIVE_HMI)
+
+    # NOTE: doover_tables (DooverTables.js) is intentionally left on GitHub Pages.
+    #
+    # To render the standalone ReconciliationComponent instead of FuelAdditiveWidget,
+    # drop "fuel_additive_reconciliation" from _FUEL_ADDITIVE_WIDGET_SOURCES and map
+    # it separately to:
+    #     {"componentUrl": "fuel_additive_reconciliation",
+    #      "scope": "ReconciliationComponent",
+    #      "module": "./ReconciliationComponent"}
 
 
 def normalize_reported_desired(payload: dict) -> dict | None:
