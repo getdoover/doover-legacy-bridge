@@ -100,6 +100,36 @@ def normalize_reported_desired(payload: dict) -> dict | None:
     state["children"] = reported.get("children", {})
     return desired
 
+def assign_positions(payload: dict, start: int = 101) -> dict:
+    """Pin ui element ordering by writing an explicit ``position`` on each child.
+
+    Doover 1.0 has no concept of position - the ui is rendered in the order the
+    elements appear in the payload.  Doover 2.0 sorts children alphabetically by
+    key when no ``position`` is set, so we materialise the 1.0 insertion order as
+    positions to preserve the original layout.
+
+    Positions restart at ``start`` within each set of siblings (submodule
+    children are only ever ordered against each other).
+
+    Only ever call this with a *full* ui_state payload - a diff contains just the
+    changed elements, so positions derived from it would be meaningless.
+    """
+    children = payload.get("children")
+    if not isinstance(children, dict):
+        return payload
+
+    position = start
+    for child in children.values():
+        if not isinstance(child, dict):
+            continue
+
+        child["position"] = position
+        position += 1
+        assign_positions(child, start)
+
+    return payload
+
+
 def find_element(key, payload):
     try:
         return payload[key]

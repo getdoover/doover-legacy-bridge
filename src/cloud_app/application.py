@@ -20,6 +20,7 @@ from pydoover.cloud.api import Client, NotFound
 from datetime import datetime, timezone, timedelta
 
 from legacy_bridge_common.utils import (
+    assign_positions,
     get_connection_info,
     normalize_reported_desired,
     parse_file,
@@ -375,6 +376,9 @@ class DooverLegacyBridgeApplication(Application):
             await self.handle_connection_config(data)
             data = replace_units_add_requires_confirm(data)
             replace_widget_urls(data["state"])
+            # a manual sync is always a full aggregate, so it's the only place we can
+            # safely derive element ordering from the doover 1.0 payload.
+            assign_positions(data["state"])
 
             if desired is not None:
                 await self.api.update_aggregate(

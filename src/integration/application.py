@@ -7,6 +7,7 @@ from typing import Any
 from pydoover.cloud.processor import Application, IngestionEndpointEvent
 
 from legacy_bridge_common.utils import (
+    assign_positions,
     parse_file,
     find_element,
     normalize_reported_desired,
@@ -114,6 +115,10 @@ class DooverLegacyBridgeApplication(Application):
                 pass
             else:
                 replace_widget_urls(state)
+                if not event.payload["is_diff"]:
+                    # a diff only carries the changed elements, so ordering derived
+                    # from it would be meaningless - leave positions alone.
+                    assign_positions(state)
 
             payload = replace_units_add_requires_confirm(payload)
 
