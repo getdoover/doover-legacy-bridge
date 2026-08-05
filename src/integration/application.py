@@ -10,6 +10,7 @@ from legacy_bridge_common.utils import (
     assign_positions,
     parse_file,
     find_element,
+    is_shadow_schema,
     normalize_reported_desired,
     replace_units_add_requires_confirm,
     replace_widget_urls
@@ -108,6 +109,7 @@ class DooverLegacyBridgeApplication(Application):
                 await self.handle_ui_cmds_update(agent_id, actor, payload, aggregate.data)
 
         if channel_name == "ui_state":
+            had_reported = is_shadow_schema(payload)
             desired = normalize_reported_desired(payload)
             try:
                 state = payload["state"]
@@ -124,10 +126,20 @@ class DooverLegacyBridgeApplication(Application):
 
             if desired is not None:
                 desired["doover_legacy_bridge_at"] = time.time() * 1000
+                # a desired-only diff (no reported) is never a full ui_cmds
+                # snapshot, so it must merge no matter what is_diff says
                 await self.api.update_aggregate(
                     agent_id, "ui_cmds", data=desired,
-                    replace=not event.payload["is_diff"],
+                    replace=had_reported and not event.payload["is_diff"],
                 )
+
+            if desired is not None and not payload.get("state"):
+                # the message carried only desired state (a 1.0-side user changed
+                # a setting on a shadow device, or our own shadow write echoing
+                # back) - that's ui_cmds traffic, there's nothing to write to
+                # the 2.0 ui_state channel.
+                log.info("ui_state message carried only desired state, skipping ui_state write.")
+                return
             # payload = nested_find_replace(payload, "componentUrl", "https://getdoover.github.io/cameras/HLSLiveView.js", "https://getdoover.github.io/cameras/LiveViewV2.js")
 
         if channel_name == "activity_logs":

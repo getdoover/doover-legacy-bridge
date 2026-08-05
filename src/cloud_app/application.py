@@ -22,6 +22,7 @@ from datetime import datetime, timezone, timedelta
 from legacy_bridge_common.utils import (
     assign_positions,
     get_connection_info,
+    is_shadow_schema,
     normalize_reported_desired,
     parse_file,
     replace_units_add_requires_confirm,
@@ -114,6 +115,32 @@ class DooverLegacyBridgeApplication(Application):
                 return False
 
         return True
+
+    async def legacy_uses_shadow_schema(self) -> bool:
+        """Whether the legacy agent is a greengrass/shadow device.
+
+        Very old greengrass devices keep their whole world in the ui_state
+        shadow document (``state.reported`` / ``state.desired``) and never
+        subscribe to a ``ui_cmds`` channel - commands only reach them through
+        the shadow's ``desired`` block.  Detected once from the legacy ui_state
+        aggregate and cached in a tag (manual syncs refresh it).
+        """
+        cached = await self.get_tag("legacy_shadow_schema")
+        if cached is not None:
+            return cached
+
+        try:
+            channel = self.legacy_client.get_channel_named(
+                "ui_state", self.config.legacy_agent_key.value
+            )
+            data = channel.fetch_aggregate()
+        except NotFound:
+            # no ui_state on 1.0 yet - don't cache, try again next time
+            return False
+
+        is_shadow = isinstance(data, dict) and is_shadow_schema(data)
+        await self.set_tag("legacy_shadow_schema", is_shadow)
+        return is_shadow
 
     async def handle_connection_config(self, payload: dict):
         # if this is a processor-based application we need to reach into ui_state and fetch any connection info
@@ -278,13 +305,22 @@ class DooverLegacyBridgeApplication(Application):
                 f"Forwarding message to Doover 1.0: agent: {self.config.legacy_agent_key.value}, channel: {event.channel_name}, diff: {event.message.data}"
             )
 
-            if event.channel_name == "ui_cmds":
+            target_channel = event.channel_name
+            if event.channel_name == "ui_cmds" and await self.legacy_uses_shadow_schema():
+                # shadow devices never read ui_cmds - commands only reach them
+                # through the desired block of the ui_state shadow document.
+                # no bridge stamp here: anything extra would be persisted into
+                # the device shadow, and the echo path is already loop-safe.
+                log.info("Legacy agent is a shadow device, writing diff to ui_state desired.")
+                target_channel = "ui_state"
+                message: dict = {"state": {"desired": event.message.data}}
+            elif event.channel_name == "ui_cmds":
                 # this sucks but doover 1.0 wraps everything inside a "cmds" struct, so just replicate that...
                 message: dict = {"cmds": event.message.data}
+                message["doover_legacy_bridge2_at"] = time.time() * 1000
             else:
                 message: dict = event.message.data
-
-            message["doover_legacy_bridge2_at"] = time.time() * 1000
+                message["doover_legacy_bridge2_at"] = time.time() * 1000
 
             if self.config.read_only.value:
                 log.info("Read only mode enabled, not writing message to Doover 1.0.")
@@ -292,7 +328,7 @@ class DooverLegacyBridgeApplication(Application):
 
             self.legacy_client.publish_to_channel_name(
                 self.config.legacy_agent_key.value,
-                event.channel_name,
+                target_channel,
                 message,
             )
 
@@ -326,6 +362,16 @@ class DooverLegacyBridgeApplication(Application):
             await self.sync_channel(channel.name)
 
     async def sync_channel(self, channel_name):
+        if channel_name == "ui_cmds" and await self.legacy_uses_shadow_schema():
+            # shadow devices keep their command truth in ui_state's desired
+            # block; a 1.0 ui_cmds channel on one is a stale artifact (e.g.
+            # commands this bridge forwarded before it was shadow-aware).
+            # syncing it would write unstamped data to 2.0 ui_cmds, which the
+            # resulting message event would forward straight back to the
+            # device shadow as a live command.
+            log.info("Skipping ui_cmds sync for shadow device.")
+            return
+
         try:
             ch = self.legacy_client.client.get_channel_named(
                 channel_name, self.config.legacy_agent_key.value
@@ -371,6 +417,9 @@ class DooverLegacyBridgeApplication(Application):
             data["applications"][self.app_key] = self.received_deployment_config
 
         if channel_name == "ui_state":
+            # a manual sync sees the full 1.0 aggregate, so it's the authoritative
+            # place to (re)detect whether this legacy agent is a shadow device
+            await self.set_tag("legacy_shadow_schema", is_shadow_schema(data))
             desired = normalize_reported_desired(data)
             # this will run on a message publish trigger but won't be accepted because of the doover 1.0 origin check
             await self.handle_connection_config(data)
@@ -381,6 +430,10 @@ class DooverLegacyBridgeApplication(Application):
             assign_positions(data["state"])
 
             if desired is not None:
+                # stamped so the resulting 2.0 ui_cmds message event is dropped
+                # by the pre-hook instead of being forwarded back to the device
+                # as a command
+                desired["doover_legacy_bridge_at"] = time.time() * 1000
                 await self.api.update_aggregate(
                     self.agent_id, "ui_cmds", data=desired, replace=True
                 )

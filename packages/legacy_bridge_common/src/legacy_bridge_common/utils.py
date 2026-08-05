@@ -83,21 +83,30 @@ def replace_widget_urls(state):
     )
 
 
+def is_shadow_schema(payload: dict) -> bool:
+    """Whether a ui_state payload uses the greengrass/AWS-shadow reported schema."""
+    state = payload.get("state")
+    return isinstance(state, dict) and "reported" in state
+
+
 def normalize_reported_desired(payload: dict) -> dict | None:
     """Flatten reported/desired ui_state into the children format 2.0 expects.
 
     If state has a ``reported`` key, its children are promoted to ``state.children``
     and the ``desired`` dict (the 1.0 equivalent of ui_cmds) is returned so the
-    caller can sync it separately.  Returns ``None`` when the payload is already
+    caller can sync it separately.  A shadow-device diff can also carry *only*
+    ``desired`` (a 1.0-side user changed a setting) - that desired is returned
+    too, leaving ``state`` empty.  Returns ``None`` when the payload is already
     in the flat format.
     """
     state = payload.get("state")
-    if not isinstance(state, dict) or "reported" not in state:
+    if not isinstance(state, dict) or not ("reported" in state or "desired" in state):
         return None
 
-    reported = state.pop("reported")
     desired = state.pop("desired", None)
-    state["children"] = reported.get("children", {})
+    if "reported" in state:
+        reported = state.pop("reported")
+        state["children"] = reported.get("children", {})
     return desired
 
 def assign_positions(payload: dict, start: int = 101) -> dict:

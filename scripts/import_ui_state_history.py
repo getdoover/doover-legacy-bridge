@@ -280,6 +280,9 @@ def transform(channel_name: str, payload: dict) -> dict | None:
     if channel_name == "ui_state":
         # drops the 1.0 `desired` block (that's ui_cmds' history, not ui_state's)
         normalize_reported_desired(payload)
+        if not payload.get("state"):
+            # a desired-only shadow diff - ui_cmds history, not ui_state's
+            return None
         payload = replace_units_add_requires_confirm(payload)
         if isinstance(payload.get("state"), dict):
             replace_widget_urls(payload["state"])
@@ -490,11 +493,6 @@ def import_agent(
         log.info("%s: would publish %s messages", label, stats["published"])
 
     return stats
-
-
-def parse_dt(value: str) -> datetime:
-    dt = datetime.fromisoformat(value)
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def main() -> int:
