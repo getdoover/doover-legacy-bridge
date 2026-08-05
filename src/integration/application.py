@@ -162,12 +162,16 @@ class DooverLegacyBridgeApplication(Application):
 
         payload["doover_legacy_bridge_at"] = time.time() * 1000
 
-        try:
-            ts_data = event.payload["timestamp"]
-        except KeyError:
+        # Doover 1.0 sends the message timestamp as "ts" (ms since epoch). "timestamp" is
+        # accepted too in case an older/other relayer sends that key instead - without
+        # either we'd silently stamp the message as "now", which loses history ordering
+        # for anything backdated (e.g. a reprocessed/backfilled channel).
+        ts_data = event.payload.get("ts", event.payload.get("timestamp"))
+        if ts_data is None:
+            log.warning("Relayed message has no timestamp, falling back to now.")
             ts = datetime.now(timezone.utc)
         else:
-            ts = datetime.fromtimestamp(ts_data / 1000.0).astimezone(timezone.utc)
+            ts = datetime.fromtimestamp(ts_data / 1000.0, timezone.utc)
 
         record_log = event.payload["record_log"]
         is_diff = event.payload["is_diff"]
