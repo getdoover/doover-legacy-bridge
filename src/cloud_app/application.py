@@ -78,8 +78,13 @@ class DooverLegacyBridgeApplication(Application):
     async def pre_hook_filter(self, event):
         if isinstance(event, AggregateUpdateEvent):
             if event.channel.name == "ui_state" and not (
-                    get_connection_info(event.aggregate.data.get("state", {}))
-                    and "doover_legacy_bridge_at" in event.request_data.data
+                    "doover_legacy_bridge_at" in event.request_data.data
+                    and (
+                        get_connection_info(event.aggregate.data.get("state", {}))
+                        # No legacy connection info, but an offline-after set on
+                        # this install: the config handler publishes it.
+                        or self.configured_offline_after is not None
+                    )
             ):
                 # if this is a processor-based application we need to reach into ui_state and fetch any connection info
                 # so we can update the connection status
