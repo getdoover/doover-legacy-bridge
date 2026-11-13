@@ -22,6 +22,32 @@ def get_connection_info(payload) -> dict | None:
     return None
 
 
+def connection_config_for(connection_data, offline_after, ConnectionConfig, ConnectionType):
+    """The 2.0 connection config to publish for a legacy device.
+
+    Built from the legacy connection info when there is any, with a configured
+    offline-after laid over it: the bridge republishes whatever differs from
+    the aggregate, so a value set only on the aggregate would be undone at the
+    next report, while one carried here stays. A device with no legacy
+    connection info gets a config only when an offline-after is set, typed as
+    periodic-continuous, so a dropped legacy socket is read as a gap to wait
+    out rather than the device going offline.
+
+    Returns None when there is nothing to publish.
+    """
+    if connection_data:
+        config = ConnectionConfig.from_v1(connection_data)
+        if offline_after is not None:
+            config.offline_after = offline_after
+        return config
+    if offline_after is not None:
+        # Positional: the pinned pydoover's constructor has no defaults.
+        return ConnectionConfig(
+            ConnectionType.periodic_continuous, None, offline_after, None, None
+        )
+    return None
+
+
 def parse_file(channel_name: str, payload: dict):
     log.info("Handling file message.")
 

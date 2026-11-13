@@ -21,6 +21,7 @@ from datetime import datetime, timezone, timedelta
 
 from legacy_bridge_common.utils import (
     assign_positions,
+    connection_config_for,
     get_connection_info,
     is_shadow_schema,
     normalize_reported_desired,
@@ -142,15 +143,30 @@ class DooverLegacyBridgeApplication(Application):
         await self.set_tag("legacy_shadow_schema", is_shadow)
         return is_shadow
 
+    @property
+    def configured_offline_after(self) -> int | None:
+        """An offline-after set on this install, overriding the device's own."""
+        value = getattr(getattr(self.config, "offline_after", None), "value", None)
+        return int(value) if value else None
+
     async def handle_connection_config(self, payload: dict):
         # if this is a processor-based application we need to reach into ui_state and fetch any connection info
         # so we can update the connection status
         connection_data = get_connection_info(payload.get("state", {}))
+        config = connection_config_for(
+            connection_data,
+            self.configured_offline_after,
+            ConnectionConfig,
+            ConnectionType,
+        )
         if not connection_data:
-            log.info("No connection data found, skipping...")
+            if config is not None and config != self.connection_config:
+                log.info("No connection data found; publishing the configured offline-after.")
+                await self.api.update_connection_config(self.agent_id, config)
+            else:
+                log.info("No connection data found, skipping...")
             return
 
-        config = ConnectionConfig.from_v1(connection_data)
         if config.connection_type is ConnectionType.continuous:
             await self.api.ping_connection_at(
                 self.agent_id,
@@ -221,8 +237,14 @@ class DooverLegacyBridgeApplication(Application):
                 and self.connection_config.connection_type
                 is ConnectionType.periodic_continuous
         ):
+            # A dropped socket on a device that drops it by design. Reported as
+            # offline-with-an-online-determination rather than pending: Doover
+            # 2.0 gives this status the periodic grace window *and* schedules
+            # the check at the end of it, so a device that never comes back is
+            # marked offline then. A pending status gets the window but no
+            # check, and would stay online for good.
             status, determination = (
-                ConnectionStatus.continuous_pending,
+                ConnectionStatus.continuous_offline,
                 ConnectionDetermination.online,
             )
         else:

@@ -19,6 +19,17 @@ class DooverLegacyBridgeConfig(DooverLegacyBridgeCommonConfig):
             description="If this is enabled, no messages will be written back to Doover 1.0, ever.",
             default=False,
         )
+        self.offline_after = config.Integer(
+            "Offline After",
+            default=None,
+            minimum=60,
+            description=(
+                "Seconds after the device's last report before Doover 2.0 marks it offline. "
+                "Set this when the device's own connection settings understate how often it "
+                "really reports, or when its Doover 1.0 socket drops and reconnects on a cycle. "
+                "Leave blank to use the device's own settings."
+            ),
+        )
 
 
 def export():
